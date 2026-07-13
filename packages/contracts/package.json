@@ -1,0 +1,12 @@
+{
+  "name": "@fletch/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FletchCommits merkle root registry for robinhood chain",
+  "scripts": {
+    "build": "forge build || echo forge is not installed here; run this on a machine with foundry",
+    "test": "forge test -vv || echo forge is not installed here; run this on a machine with foundry",
+    "typecheck": "echo solidity package, typechecking happens in forge build",
+    "deploy": "forge script script/Deploy.s.sol --rpc-url $FLETCH_RPC_URL --broadcast"
+  }
+}

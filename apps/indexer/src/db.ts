@@ -166,6 +166,78 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
   }
 }
 
+// --- commits ----------------------------------------------------------------
+
+// canonical leaf record persisted alongside the root so proofs can be
+// rebuilt for any historical observation. fairValue is the canonical
+// 8-decimal string, exactly what was hashed.
+export interface CommitLeafRecord {
+  tokenId: number;
+  cycleId: number;
+  fairValue: string;
+  confidence: number;
+  timestamp: number;
+  leaf: string;
+}
+
+export type CommitStatus = "pending" | "confirmed" | "failed";
+
+export async function upsertCommit(
+  cycleId: number,
+  merkleRoot: string,
+  observationCount: number,
+  leaves: CommitLeafRecord[],
+  status: CommitStatus
+): Promise<void> {
+  await db().query(
+    `insert into commits (cycle_id, merkle_root, observation_count, leaves, status, committed_at)
+     values ($1, $2, $3, $4, $5, case when $5 = 'confirmed' then now() else null end)
+     on conflict (cycle_id) do update set
+       merkle_root = excluded.merkle_root,
+       observation_count = excluded.observation_count,
+       leaves = excluded.leaves,
+       status = excluded.status,
+       committed_at = case when excluded.status = 'confirmed' then now() else commits.committed_at end`,
+    [cycleId, merkleRoot, observationCount, JSON.stringify(leaves), status]
+  );
+}
+
+export async function markCommitStatus(
+  cycleId: number,
+  status: CommitStatus,
+  txHash: string | null
+): Promise<void> {
+  await db().query(
+    `update commits set
+       status = $2,
+       tx_hash = coalesce($3, tx_hash),
+       committed_at = case when $2 = 'confirmed' then now() else committed_at end
+     where cycle_id = $1`,
+    [cycleId, status, txHash]
+  );
+}
+
+export interface UnconfirmedCommit {
+  cycleId: number;
+  merkleRoot: string;
+  observationCount: number;
+}
+
+export async function listUnconfirmedCommits(hours: number): Promise<UnconfirmedCommit[]> {
+  const res = await db().query(
+    `select cycle_id, merkle_root, observation_count
+     from commits
+     where status <> 'confirmed' and created_at > now() - ($1 || ' hours')::interval
+     order by cycle_id asc`,
+    [String(hours)]
+  );
+  return res.rows.map((row) => ({
+    cycleId: Number(row.cycle_id),
+    merkleRoot: row.merkle_root,
+    observationCount: Number(row.observation_count),
+  }));
+}
+
 export async function writeHeartbeat(
   service: string,
   ok: boolean,

@@ -8,10 +8,11 @@
 //
 // every cycle (default 600s):
 //   - run the fair value engine per token and upsert the outputs
-//   - (phase 4) build the merkle tree and commit the root on-chain
+//   - build the merkle tree, store the leaf set, commit the root on-chain
 //
-// resilience rules: a failed source or a failed tick never crashes the
-// worker; everything retries with backoff on the next tick.
+// resilience rules: a failed source, a failed tick, or a failed commit never
+// crashes the worker; everything retries with backoff on later ticks and the
+// commit reconcile pass re-sends anything unconfirmed.
 
 import { assertConfigReady, mockMode, timing } from "@fletch/config";
 import { lastCloseTime } from "@fletch/engine";
@@ -35,11 +36,13 @@ import {
 } from "./proxies.js";
 import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
 import { maybeRunCycle } from "./cycle.js";
+import { publishCycle, reconcileCommits } from "./publisher.js";
 import { log } from "./log.js";
 
 let running = true;
 let lastPrunedDay = "";
 let lastCycleId: number | null = null;
+let ticksSinceReconcile = 0;
 
 async function collectPools(): Promise<{ readings: PoolReading[]; errors: string[] }> {
   const readings: PoolReading[] = [];
@@ -99,14 +102,26 @@ async function tick(): Promise<void> {
   await insertObservations(observationRows);
   await insertProxyTicks(proxyRows);
 
-  // run the fair value cycle when a new cycle has begun
+  // run the fair value cycle and publish the commit when a new cycle begins
   try {
     const cycleOutcome = await maybeRunCycle(now);
-    if (cycleOutcome) lastCycleId = cycleOutcome.cycleId;
+    if (cycleOutcome) {
+      lastCycleId = cycleOutcome.cycleId;
+      await publishCycle(cycleOutcome);
+    }
   } catch (err) {
     log.error("cycle run failed", {
       message: err instanceof Error ? err.message : String(err),
     });
+  }
+
+  // every ~10 ticks, retry anything unconfirmed
+  ticksSinceReconcile += 1;
+  if (ticksSinceReconcile >= 10) {
+    ticksSinceReconcile = 0;
+    await reconcileCommits().catch((err) =>
+      log.warn("reconcile pass failed", { message: String(err) })
+    );
   }
 
   const failedProxies = proxyResults.filter((r) => !r.ok).map((r) => r.source.name);

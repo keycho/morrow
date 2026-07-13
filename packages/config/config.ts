@@ -218,8 +218,10 @@ export interface TokenConfig {
 // model depth floor, so the onchain weight sits near zero and fair value is
 // mostly anchor plus proxy drift; that is expected and surfaced in confidence.
 //
-// msft and amzn stay null: no usable pool on any venue at discovery. they block
-// live boot (assertConfigReady) until a pool exists or they are removed.
+// msft and amzn had no usable pool on any venue at discovery, so they are not
+// in the launch set (kept in availableStockTokens; weekly discovery still
+// sweeps them and alerts if a pool appears). ids 4 and 5 are theirs and stay
+// retired so leaf/db ids are never reused.
 //
 // not promoted, kept in availableStockTokens with real pools that did not make
 // the cut: spcx (deepest pool on the network at ~15k usd, but spacex is private
@@ -271,38 +273,9 @@ export const tokens: TokenConfig[] = [
     quoteDecimals: 6,
     proxies: ["PROXY_NVDA_A"],
   },
-  {
-    // no pool found on any venue (v2, v3, or v4, usdg or weth). left null and
-    // excluded until a pool exists. remove msft from the launch set, or re-run
-    // discovery, before booting live.
-    id: 4,
-    symbol: "msft",
-    name: "microsoft",
-    address: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
-    quote: "usdg",
-    protocol: "v4",
-    pool: null,
-    invert: false,
-    baseDecimals: 18,
-    quoteDecimals: 6,
-    proxies: ["PROXY_MSFT_A"],
-  },
-  {
-    // only an empty v4 native-eth pool found (zero liquidity, uninitialized
-    // price). no usable pool on any venue. left null and excluded. remove amzn
-    // from the launch set, or re-run discovery, before booting live.
-    id: 5,
-    symbol: "amzn",
-    name: "amazon",
-    address: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
-    quote: "usdg",
-    protocol: "v4",
-    pool: null,
-    invert: false,
-    baseDecimals: 18,
-    quoteDecimals: 6,
-    proxies: ["PROXY_AMZN_A"],
-  },
+  // ids 4 (msft) and 5 (amzn) are retired: no usable pool at discovery, so they
+  // are not tracked. their addresses live in availableStockTokens for weekly
+  // discovery. do not reuse these ids.
   {
     // real v4 usdg pool, depth ~5600 usd. price ~355 vs ~331 real (~7%).
     // promoted from availableStockTokens after full-universe discovery.
@@ -378,6 +351,7 @@ export const availableStockTokens: Record<string, `0x${string}`> = {
   aaoi: "0x521Cf887E6531c6F667b5BC4D896E5d9bfE8EB2E",
   amat: "0x36046893810a7E7fCE501229d57dc3FC8c8716d0",
   amd: "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+  amzn: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
   apld: "0xb8DBf92F9741c9ac1c32115E78581f23509916FD",
   asml: "0x47F93d52cBeC7C6D2CfC080e154002370a60dAEA",
   asts: "0x1AF6446f07eb1d97c546AFC8c9544cBDF3AD5137",
@@ -416,6 +390,7 @@ export const availableStockTokens: Record<string, `0x${string}`> = {
   mdb: "0xDdf2266b79abf0B48898959B0ed6E6adf512be74",
   mrvl: "0x62fd0668e10D8B72339BE2DCF7643001688ff13B",
   mstr: "0xec262a75e413fAfD0dF80480274532C79D42da09",
+  msft: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
   mu: "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
   mxl: "0x48961813349333209994750ffA89b3c5C22eC969",
   nbis: "0x9D9c6684F596F66a64C030B93A886D51Fd4D7931",
@@ -549,26 +524,6 @@ export const proxySources: ProxySourceConfig[] = [
     name: "PROXY_NVDA_A",
     symbol: "nvda",
     url: "https://PROXY_SOURCE_URL_NVDA_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
-    retries: 2,
-    stalenessMs: 180_000,
-  },
-  {
-    name: "PROXY_MSFT_A",
-    symbol: "msft",
-    url: "https://PROXY_SOURCE_URL_MSFT_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
-    retries: 2,
-    stalenessMs: 180_000,
-  },
-  {
-    name: "PROXY_AMZN_A",
-    symbol: "amzn",
-    url: "https://PROXY_SOURCE_URL_AMZN_A",
     jsonPath: "REPLACE.WITH.PATH",
     weight: 1,
     timeoutMs: 5_000,
@@ -833,10 +788,10 @@ export const anchors = {
   // look back this far for a corporate action when validating a large jump.
   corporateActionLookbackHours: 48,
   sources: [
-    // tsla, aapl, nvda, googl are wired to finnhub's /quote endpoint: one call
-    // returns the previous close (pc) for the close anchor and the day's open
-    // (o) for the open anchor. {SYMBOL} is the uppercased ticker, {apiKey} is
-    // anchors.apiKey from env. msft, amzn, meta, spy remain placeholders.
+    // all six launch tokens (tsla, aapl, nvda, googl, meta, spy) are wired to
+    // finnhub's /quote endpoint: one call returns the previous close (pc) for
+    // the close anchor and the day's open (o) for the open anchor. {SYMBOL} is
+    // the uppercased ticker, {apiKey} is anchors.apiKey from env.
     {
       name: "ANCHOR_TSLA",
       symbol: "tsla",
@@ -871,24 +826,6 @@ export const anchors = {
       retries: 3,
     },
     {
-      name: "ANCHOR_MSFT",
-      symbol: "msft",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
-      timeoutMs: 8_000,
-      retries: 3,
-    },
-    {
-      name: "ANCHOR_AMZN",
-      symbol: "amzn",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
-      timeoutMs: 8_000,
-      retries: 3,
-    },
-    {
       name: "ANCHOR_GOOGL",
       symbol: "googl",
       closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
@@ -902,18 +839,22 @@ export const anchors = {
     {
       name: "ANCHOR_META",
       symbol: "meta",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },
     {
       name: "ANCHOR_SPY",
       symbol: "spy",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },

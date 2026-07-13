@@ -32,6 +32,9 @@ export const mockBasePrices: Record<string, number> = {
   nvda: 130,
   msft: 420,
   amzn: 190,
+  googl: 355,
+  meta: 660,
+  spy: 740,
 };
 
 interface MockState {

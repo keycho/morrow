@@ -14,7 +14,7 @@
 
 import { createPublicClient, http, type Hex } from "viem";
 import pg from "pg";
-import { tokenById } from "@fletch/config";
+import { DISCOVERY_CANDIDATE_ID_BASE, discoveryCandidates, type TokenConfig } from "@fletch/config";
 import {
   readAnchorReferences,
   runDiscovery,
@@ -23,6 +23,11 @@ import {
   type Judged,
   type Selection,
 } from "@fletch/discovery";
+
+// every token discovery probes, by id, so a selection (launch or available
+// candidate) resolves back to its full config for the snippet.
+const candidateById = new Map<number, TokenConfig>(discoveryCandidates().map((t) => [t.id, t]));
+const isCandidate = (id: number): boolean => id >= DISCOVERY_CANDIDATE_ID_BASE;
 
 // --- output helpers ---------------------------------------------------------
 
@@ -76,53 +81,73 @@ function printTable(judged: Judged[]): void {
 
 function printSelections(selections: Selection[]): void {
   console.log("");
-  console.log("selection per token");
+  console.log("selection per token (launch set + captured available tokens)");
   for (const s of selections) {
+    const tag = isCandidate(s.tokenId) ? " (available)" : "";
     if (!s.chosen) {
-      console.log(`  ${pad(s.symbol, 7)} excluded: ${s.reason}`);
+      console.log(`  ${pad(s.symbol, 7)} excluded: ${s.reason}${tag}`);
     } else {
       console.log(
         `  ${pad(s.symbol, 7)} ${pad(s.chosen.protocol, 3)} ${pad(s.chosen.quote, 5)} ` +
-          `fee ${pad(s.chosen.fee === null ? "-" : String(s.chosen.fee), 6)} depth $${fmt(s.chosen.depthUsd)} price $${fmt(s.chosen.priceUsd)}`
+          `fee ${pad(s.chosen.fee === null ? "-" : String(s.chosen.fee), 6)} depth $${fmt(s.chosen.depthUsd)} price $${fmt(s.chosen.priceUsd)}${tag}`
       );
     }
   }
 }
 
+function printTokenEntry(t: TokenConfig, c: Judged, promote: boolean): void {
+  const quoteForConfig = c.quote === "eth" ? "weth" : c.quote;
+  if (c.quote === "weth" || c.quote === "eth") {
+    console.log(`  // ${t.symbol}: ${c.protocol} ${c.quote} pool. needs the eth/usd source to dollarize.`);
+  }
+  console.log("  {");
+  console.log(`    id: ${promote ? "<next unused id>" : t.id},`);
+  console.log(`    symbol: "${t.symbol}",`);
+  console.log(`    name: "${promote ? "<full name>" : t.name}",`);
+  console.log(`    address: "${t.address}",`);
+  console.log(`    quote: "${quoteForConfig}",`);
+  console.log(`    protocol: "${c.protocol}",`);
+  console.log(`    pool: "${c.identifier}",`);
+  console.log(`    invert: ${c.invert},`);
+  console.log(`    baseDecimals: ${c.baseDecimals},`);
+  console.log(`    quoteDecimals: ${c.quoteDecimals},`);
+  console.log(`    proxies: ${promote ? "[/* wire a proxy + anchor source */]" : `[${t.proxies.map((p) => `"${p}"`).join(", ")}]`},`);
+  console.log(`  },`);
+}
+
 function printSnippet(selections: Selection[]): void {
   const wethSelected = selections.some((s) => s.chosen && (s.chosen.quote === "weth" || s.chosen.quote === "eth"));
+
+  // launch set: the current five, filled or excluded as discovery found them.
   console.log("");
-  console.log("ready-to-paste config snippet (packages/config/config.ts)");
+  console.log("ready-to-paste config snippet — launch set (packages/config/config.ts)");
   console.log("");
   console.log("export const tokens: TokenConfig[] = [");
-  for (const s of selections) {
-    const t = tokenById(s.tokenId);
+  for (const s of selections.filter((x) => !isCandidate(x.tokenId))) {
+    const t = candidateById.get(s.tokenId);
     if (!t) continue;
-    const proxyList = `[${t.proxies.map((p) => `"${p}"`).join(", ")}]`;
     if (!s.chosen) {
       console.log(`  // ${t.symbol}: ${s.reason}. excluded from the launch set, left null.`);
       continue;
     }
-    const c = s.chosen;
-    const quoteForConfig = c.quote === "eth" ? "weth" : c.quote;
-    if (c.quote === "weth" || c.quote === "eth") {
-      console.log(`  // ${t.symbol}: ${c.protocol} ${c.quote} pool. needs the eth/usd source to dollarize.`);
-    }
-    console.log("  {");
-    console.log(`    id: ${t.id},`);
-    console.log(`    symbol: "${t.symbol}",`);
-    console.log(`    name: "${t.name}",`);
-    console.log(`    address: "${t.address}",`);
-    console.log(`    quote: "${quoteForConfig}",`);
-    console.log(`    protocol: "${c.protocol}",`);
-    console.log(`    pool: "${c.identifier}",`);
-    console.log(`    invert: ${c.invert},`);
-    console.log(`    baseDecimals: ${c.baseDecimals},`);
-    console.log(`    quoteDecimals: ${c.quoteDecimals},`);
-    console.log(`    proxies: ${proxyList},`);
-    console.log(`  },`);
+    printTokenEntry(t, s.chosen, false);
   }
   console.log("];");
+
+  // promotable available tokens: those with a real, plausible pool that are
+  // not yet in the launch set. assign a fresh id and wire sources to add them.
+  const promotable = selections.filter((s) => isCandidate(s.tokenId) && s.chosen);
+  if (promotable.length > 0) {
+    console.log("");
+    console.log(`promotable available tokens (${promotable.length}) — a real pool exists, not yet tracked.`);
+    console.log("give each a fresh unused id and wire a proxy + anchor source, then move into tokens:");
+    console.log("");
+    for (const s of promotable) {
+      const t = candidateById.get(s.tokenId);
+      if (t && s.chosen) printTokenEntry(t, s.chosen, true);
+    }
+  }
+
   if (wethSelected) {
     console.log("");
     console.log("a weth or native-eth pool was selected. wire dollarization.ethUsdSource and");

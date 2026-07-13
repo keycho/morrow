@@ -11,7 +11,7 @@
 // plus a check of the last stored run keep it to once a week even across a
 // restart within the window.
 
-import { calendar, discovery, mockMode, tokens } from "@fletch/config";
+import { calendar, discovery, discoveryCandidates, mockMode } from "@fletch/config";
 import { wallTimeAt } from "@fletch/engine";
 import {
   analyzeDiscovery,
@@ -72,8 +72,11 @@ export async function maybeRunDiscovery(
     await storeDiscoveryRun(db(), result);
 
     // the just-stored run is the newest; the window includes it at index 0.
+    // analyze against the full candidate universe so a usable pool appearing
+    // for any captured available token (not only a null launch token) surfaces.
+    const candidates = discoveryCandidates();
     const recent = await recentDiscoveryResults(db(), discovery.depthBelowFloorRuns);
-    const findings = analyzeDiscovery(recent, tokens);
+    const findings = analyzeDiscovery(recent, candidates);
 
     const activeKeys = new Set<string>();
     for (const f of findings) {
@@ -89,7 +92,7 @@ export async function maybeRunDiscovery(
     }
     // clear any discovery condition that no longer holds (resolve is a no-op
     // when the key was never active).
-    for (const t of tokens) {
+    for (const t of candidates) {
       if (!activeKeys.has(newPoolKey(t.id))) await alerter.resolve(newPoolKey(t.id), "no new pool");
       if (!activeKeys.has(depthKey(t.id))) await alerter.resolve(depthKey(t.id), "pool depth recovered");
     }

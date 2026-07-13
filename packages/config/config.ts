@@ -205,16 +205,28 @@ export interface TokenConfig {
 }
 
 // the launch set comes from a multi-protocol discovery run against robinhood
-// chain mainnet (scripts/discover-pools.ts probes v2, v3, and v4). the deepest
-// usable pools are uniswap v4 usdg pools, identified by v4 pool id (bytes32),
-// not a pool address; the reader reads them through the v4 state-view lens.
+// chain mainnet over the full captured token universe (scripts/discover-pools.ts
+// probes v2, v3, and v4 for every token in `tokens` plus every entry in
+// availableStockTokens, see discoveryCandidates). the deepest usable pools are
+// uniswap v4 usdg pools, identified by v4 pool id (bytes32), not a pool
+// address; the reader reads them through the v4 state-view lens.
 //
-// tsla and nvda: real v4 usdg pools, deeper than their v3 pools (tsla's v3
-// usdg pool is empty, nvda's v4 pool is ~7x deeper), and plausible against a
-// reference (395 vs ~392, 207 vs ~206). filled.
+// the six tracked tokens below each have a real, non-empty v4 usdg pool and a
+// per-share price within ~10% of the underlying at discovery (july 2026 refs:
+// tsla 395 vs ~397, nvda 205, aapl 319 vs ~298, googl 355 vs ~331, meta 661,
+// spy 743). depth is thin in absolute terms (1.3k-6.5k usd), well below the
+// model depth floor, so the onchain weight sits near zero and fair value is
+// mostly anchor plus proxy drift; that is expected and surfaced in confidence.
 //
-// aapl, msft, amzn: excluded, left null. see each comment. re-run discovery
-// against a production rpc before launch; pools and depth evolve.
+// msft and amzn stay null: no usable pool on any venue at discovery. they block
+// live boot (assertConfigReady) until a pool exists or they are removed.
+//
+// not promoted, kept in availableStockTokens with real pools that did not make
+// the cut: spcx (deepest pool on the network at ~15k usd, but spacex is private
+// with no official market close to anchor, so the off-hours model cannot price
+// it); pltr, amd, mu (thin pools, and amd/mu price well above the underlying —
+// track only after a real anchor confirms them). re-run discovery before launch;
+// pools and depth evolve.
 export const tokens: TokenConfig[] = [
   {
     id: 1,
@@ -230,22 +242,17 @@ export const tokens: TokenConfig[] = [
     proxies: ["PROXY_TSLA_A"],
   },
   {
-    // a real v4 usdg pool exists
-    // (0xda4116b5894ee7479e64eae9276e1a2944ef0e5ce863a299d296a15618deee01,
-    // depth ~6500 usd), but its price (~319 usd/share) is ~36% above aapl's
-    // off-hours real (~235), which fails the discovery plausibility gate
-    // (default 25%). the pool is real, not empty, but the tokenized-aapl
-    // market is priced well above the underlying, so tracking it as-is would
-    // drag fair value. excluded until the price converges or the operator
-    // confirms it. to enable: set protocol "v4", pool to that id, invert true,
-    // after re-running discovery with a real anchor reference.
+    // real v4 usdg pool, depth ~6500 usd. price ~319 usd/share is ~7% above
+    // aapl's july 2026 real (~298), inside the plausibility gate; an earlier
+    // config note used a stale ~235 reference and wrongly excluded this pool.
+    // filled.
     id: 2,
     symbol: "aapl",
     name: "apple",
     address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
     quote: "usdg",
     protocol: "v4",
-    pool: null,
+    pool: "0xda4116b5894ee7479e64eae9276e1a2944ef0e5ce863a299d296a15618deee01",
     invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -296,21 +303,118 @@ export const tokens: TokenConfig[] = [
     quoteDecimals: 6,
     proxies: ["PROXY_AMZN_A"],
   },
+  {
+    // real v4 usdg pool, depth ~5600 usd. price ~355 vs ~331 real (~7%).
+    // promoted from availableStockTokens after full-universe discovery.
+    id: 6,
+    symbol: "googl",
+    name: "alphabet",
+    address: "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+    quote: "usdg",
+    protocol: "v4",
+    pool: "0xef22239f96c6ac95dcd57b90c6b14c0cc8c3c16844def34daef68dc9dd945344",
+    invert: false,
+    baseDecimals: 18,
+    quoteDecimals: 6,
+    proxies: ["PROXY_GOOGL_A"],
+  },
+  {
+    // real v4 usdg pool, depth ~1770 usd, price ~661. promoted from
+    // availableStockTokens. confirm against a live anchor before launch.
+    id: 7,
+    symbol: "meta",
+    name: "meta platforms",
+    address: "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+    quote: "usdg",
+    protocol: "v4",
+    pool: "0x5875d407a42965b0e768c8925cea290e06fa50603ef34fc99eb92a1050e6ae36",
+    invert: true,
+    baseDecimals: 18,
+    quoteDecimals: 6,
+    proxies: ["PROXY_META_A"],
+  },
+  {
+    // real v4 usdg pool, depth ~1290 usd, price ~743. spy is the s&p 500 etf;
+    // promoted from availableStockTokens. confirm against a live anchor.
+    id: 8,
+    symbol: "spy",
+    name: "spdr s&p 500 etf",
+    address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+    quote: "usdg",
+    protocol: "v4",
+    pool: "0x7eeda68cd84620339e6ad4bf054af9b19878ac13139991c7aaec018c40a8bb6a",
+    invert: false,
+    baseDecimals: 18,
+    quoteDecimals: 6,
+    proxies: ["PROXY_SPY_A"],
+  },
 ];
 
-// stock tokens verified on chain but not in the launch set. kept here so the
-// addresses are captured in config; promote an entry into `tokens` (with a
-// fresh id) once its pool has liquidity worth tracking. addresses from
-// docs.robinhood.com/chain/contracts.
+// stock and etf tokens verified on chain but not (yet) in the launch set.
+// captured here so the addresses live in config; discovery probes these too
+// (see discoveryCandidates), and an entry is promoted into `tokens` with a
+// fresh id once discovery shows it has a real, plausible, deep-enough pool.
+//
+// addresses from docs.robinhood.com/chain/contracts (the full deployed set as
+// of july 2026); every one that overlapped the prior launch config matched
+// exactly. voo and openai from the featured list are not in the contracts doc,
+// so they are intentionally absent rather than guessed. same ticker at a
+// different address is a fake.
+// (googl, meta, spy were promoted into `tokens` after discovery found real,
+// plausible pools, so they are not repeated here.)
 export const availableStockTokens: Record<string, `0x${string}`> = {
-  googl: "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
-  meta: "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
-  amd: "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
-  coin: "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+  // big tech and growth
+  orcl: "0xb0992820E760d836549ba69BC7598b4af75dEE03",
   pltr: "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
-  spy: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+  baba: "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
+  // ai and semiconductors
+  amd: "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+  intc: "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+  mu: "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
+  sndk: "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+  // crypto and fintech
+  coin: "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+  crcl: "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+  crwv: "0x5f10A1C971B69e47e059e1dC91901B59b3fB49C3",
+  // private / pre-ipo
+  spcx: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+  // other mainnet equities
+  be: "0x822CC93fFD030293E9842c30BBD678F530701867",
+  usar: "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
+  // index funds and etfs
   qqq: "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+  sgov: "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
+  slv: "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+  cuso: "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
 };
+
+// reserved id range for discovery-only candidates. these never collide with a
+// launch token id and never enter merkle leaves, the database, or the feed.
+export const DISCOVERY_CANDIDATE_ID_BASE = 1000;
+
+// the token universe discovery probes: the launch tokens plus every captured
+// available token. available entries get reserved discovery-only ids so a run
+// can report on the whole robinhood chain equity set, not just the launch
+// five. discovery reads each token's real decimals, side (invert), and quote
+// from chain, so the placeholder fields here are unused by it; they exist only
+// to satisfy the shared TokenConfig shape. promote an entry into `tokens` with
+// a real, fresh id once discovery shows a pool worth tracking.
+export function discoveryCandidates(): TokenConfig[] {
+  const extra: TokenConfig[] = Object.entries(availableStockTokens).map(([symbol, address], i) => ({
+    id: DISCOVERY_CANDIDATE_ID_BASE + i,
+    symbol,
+    name: symbol,
+    address,
+    quote: "usdg",
+    protocol: "v4",
+    pool: null,
+    invert: false,
+    baseDecimals: 18,
+    quoteDecimals: 6,
+    proxies: [],
+  }));
+  return [...tokens, ...extra];
+}
 
 // ---------------------------------------------------------------------------
 // 24/7 proxy signals. generic http price sources that express market
@@ -389,6 +493,36 @@ export const proxySources: ProxySourceConfig[] = [
     name: "PROXY_AMZN_A",
     symbol: "amzn",
     url: "https://PROXY_SOURCE_URL_AMZN_A",
+    jsonPath: "REPLACE.WITH.PATH",
+    weight: 1,
+    timeoutMs: 5_000,
+    retries: 2,
+    stalenessMs: 180_000,
+  },
+  {
+    name: "PROXY_GOOGL_A",
+    symbol: "googl",
+    url: "https://PROXY_SOURCE_URL_GOOGL_A",
+    jsonPath: "REPLACE.WITH.PATH",
+    weight: 1,
+    timeoutMs: 5_000,
+    retries: 2,
+    stalenessMs: 180_000,
+  },
+  {
+    name: "PROXY_META_A",
+    symbol: "meta",
+    url: "https://PROXY_SOURCE_URL_META_A",
+    jsonPath: "REPLACE.WITH.PATH",
+    weight: 1,
+    timeoutMs: 5_000,
+    retries: 2,
+    stalenessMs: 180_000,
+  },
+  {
+    name: "PROXY_SPY_A",
+    symbol: "spy",
+    url: "https://PROXY_SOURCE_URL_SPY_A",
     jsonPath: "REPLACE.WITH.PATH",
     weight: 1,
     timeoutMs: 5_000,
@@ -651,6 +785,33 @@ export const anchors = {
     {
       name: "ANCHOR_AMZN",
       symbol: "amzn",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_GOOGL",
+      symbol: "googl",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_META",
+      symbol: "meta",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_SPY",
+      symbol: "spy",
       closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
       openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
       jsonPath: "REPLACE.WITH.PATH",

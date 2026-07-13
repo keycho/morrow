@@ -1,7 +1,8 @@
 // pool discovery across uniswap v2, v3, and v4 on robinhood chain.
 //
 // pool addresses are not published as a table; they are resolved from each
-// venue. for each launch token this probes:
+// venue. for each candidate token (the launch set plus every captured
+// available token) this probes:
 //   v3: usdg and weth quotes across the 500/3000/10000 fee tiers
 //   v2: usdg and weth pairs
 //   v4: usdg, weth (erc20), and native eth quotes across the standard
@@ -19,8 +20,8 @@ import { getAddress, zeroAddress, parseAbi, type Hex, type PublicClient } from "
 import {
   chain,
   discovery,
+  discoveryCandidates,
   quoteAssets,
-  tokens,
   uniswap,
   uniswapV2,
   uniswapV4,
@@ -58,8 +59,8 @@ const svAbi = parseAbi([
   "function getLiquidity(bytes32) view returns (uint128)",
 ]);
 
-async function readDecimals(c: PublicClient): Promise<Map<string, number>> {
-  const addrs = [quoteAssets.usdg.address, quoteAssets.weth.address, ...tokens.map((t) => t.address)];
+async function readDecimals(c: PublicClient, candidates: TokenConfig[]): Promise<Map<string, number>> {
+  const addrs = [quoteAssets.usdg.address, quoteAssets.weth.address, ...candidates.map((t) => t.address)];
   const res = await c.multicall({
     multicallAddress: chain.multicall3,
     allowFailure: true,
@@ -74,14 +75,14 @@ async function readDecimals(c: PublicClient): Promise<Map<string, number>> {
   return m;
 }
 
-async function readMultipliers(c: PublicClient): Promise<Map<number, bigint | null>> {
+async function readMultipliers(c: PublicClient, candidates: TokenConfig[]): Promise<Map<number, bigint | null>> {
   const res = await c.multicall({
     multicallAddress: chain.multicall3,
     allowFailure: true,
-    contracts: tokens.map((t) => ({ address: t.address, abi: erc20Abi, functionName: "uiMultiplier" as const })),
+    contracts: candidates.map((t) => ({ address: t.address, abi: erc20Abi, functionName: "uiMultiplier" as const })),
   });
   const m = new Map<number, bigint | null>();
-  tokens.forEach((t, i) => {
+  candidates.forEach((t, i) => {
     const r = res[i];
     m.set(t.id, r && r.status === "success" ? (r.result as bigint) : null);
   });
@@ -126,10 +127,12 @@ function makePool(
   };
 }
 
-// probe every venue for every launch token and return one row per pool found.
+// probe every venue for every candidate token (launch set plus the captured
+// available tokens) and return one row per pool found.
 export async function discoverPools(c: PublicClient, ethUsd: number | null): Promise<DiscoveredPool[]> {
-  const decimals = await readDecimals(c);
-  const multipliers = await readMultipliers(c);
+  const candidates = discoveryCandidates();
+  const decimals = await readDecimals(c, candidates);
+  const multipliers = await readMultipliers(c, candidates);
   const decOf = (a: Hex): number => decimals.get(a.toLowerCase()) ?? 18;
   const mulOf = (t: TokenConfig): number => decodeUiMultiplier(multipliers.get(t.id) ?? null).multiplier;
 
@@ -142,7 +145,7 @@ export async function discoverPools(c: PublicClient, ethUsd: number | null): Pro
   const out: DiscoveredPool[] = [];
 
   // --- v3 -------------------------------------------------------------------
-  const v3Probes = tokens.flatMap((t) =>
+  const v3Probes = candidates.flatMap((t) =>
     quoteDefs.flatMap((q) => uniswap.feeTiers.map((fee) => ({ t, q, fee })))
   );
   const v3PoolRes = await c.multicall({
@@ -188,7 +191,7 @@ export async function discoverPools(c: PublicClient, ethUsd: number | null): Pro
   }
 
   // --- v2 -------------------------------------------------------------------
-  const v2Probes = tokens.flatMap((t) => quoteDefs.map((q) => ({ t, q })));
+  const v2Probes = candidates.flatMap((t) => quoteDefs.map((q) => ({ t, q })));
   const v2PairRes = await c.multicall({
     multicallAddress: chain.multicall3,
     allowFailure: true,
@@ -228,7 +231,7 @@ export async function discoverPools(c: PublicClient, ethUsd: number | null): Pro
   }
 
   // --- v4 -------------------------------------------------------------------
-  const v4Probes = tokens.flatMap((t) =>
+  const v4Probes = candidates.flatMap((t) =>
     v4QuoteDefs.flatMap((q) =>
       uniswapV4.feeTickSpacings.map(([fee, ts]) => {
         const [c0, c1] =
@@ -340,6 +343,6 @@ export async function runDiscovery(
 ): Promise<DiscoveryResult> {
   const pools = await discoverPools(c, ethUsd);
   const judged = judgePools(pools, refs);
-  const selections = tokens.map((t) => selectPool(t, judged));
+  const selections = discoveryCandidates().map((t) => selectPool(t, judged));
   return { ethUsd, judged, selections };
 }

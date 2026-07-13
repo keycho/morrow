@@ -86,7 +86,10 @@ not be used for the indexer or for discovery.
 ## step 3. discover pools
 
 pool addresses are not published as a table; they are resolved from each
-venue. discovery probes uniswap v2, v3, and v4 for every launch token:
+venue. discovery probes uniswap v2, v3, and v4 for every candidate token — the
+launch set in `tokens` plus every captured address in `availableStockTokens`
+(see `discoveryCandidates`), so one run reports on the whole robinhood chain
+equity universe, not only the launch set:
 
 - v3: usdg and weth quotes across the 500, 3000, 10000 fee tiers
 - v2: usdg and weth pairs
@@ -127,19 +130,36 @@ implausible. an implausible pool is shown with the flag but never selected, so
 a tokenized market trading far from the underlying cannot silently become the
 tracked pool.
 
-honest launch set from a live run (july 2026, eth/usd 3500 for weth/eth depth,
-with real close anchors as the reference), already reflected in config:
+honest launch set from a live full-universe run (july 2026, 25 candidate
+tokens, 51 pools found, eth/usd 3500 for weth/eth depth), already reflected in
+config. the six tracked tokens each have a real v4 usdg pool at a plausible
+price:
 
-- tsla: v4 usdg pool 0x8517f807.., depth ~$4,050, ~$396/share (vs ~392 close,
-  ~1%). filled. deeper than its v3 usdg pool, which is empty.
-- nvda: v4 usdg pool 0x3bb34a44.., invert true, depth ~$5,800, ~$207/share (vs
-  ~206 close). filled. ~7x deeper than its v3 usdg pool.
-- aapl: a real v4 usdg pool exists (0xda4116b5.., depth ~$6,500) but prices
-  ~$319/share, ~36% above an aapl real of ~235, so it fails the plausibility
-  gate and is excluded (left null) until the market converges or the operator
-  confirms it. this is the case discovery is built to catch, not a bug.
-- msft: no pool on any venue. left null, excluded.
-- amzn: only an empty v4 native-eth pool (zero liquidity). left null, excluded.
+- tsla: pool 0x8517f807.., depth ~$4,050, ~$395/share (vs ~397 ref).
+- aapl: pool 0xda4116b5.., depth ~$6,500, ~$319/share (vs ~298 ref, ~7%).
+  (an earlier config note used a stale ~235 reference and wrongly excluded this
+  pool; at the real ~298 it is inside the gate.)
+- nvda: pool 0x3bb34a44.., invert true, depth ~$5,800, ~$205/share.
+- googl: pool 0xef22239f.., depth ~$5,600, ~$355/share (vs ~331 ref, ~7%).
+- meta: pool 0x5875d407.., invert true, depth ~$1,770, ~$661/share.
+- spy: pool 0x7eeda68c.., depth ~$1,290, ~$743/share (s&p 500 etf).
+
+not tracked, left as captured `availableStockTokens` for a future run:
+
+- msft, amzn: no usable pool on any venue. amzn/msft also sit in `tokens` as
+  null, which blocks live boot until a pool exists or they are removed.
+- spcx (spacex): the deepest pool on the network (~$15,000) but a private,
+  pre-ipo equity with no official market close to anchor, so the off-hours
+  fair-value model (last close + 24/7 drift) cannot price it. tracked only if a
+  close reference is defined for it.
+- pltr (~$130, depth ~$620): plausible but thin; promote once deeper.
+- amd (~$541), mu (~$933): thin pools priced well above the underlying; do not
+  track until a real anchor confirms them (exactly what the gate is for).
+- qqq, sndk, slv and the rest: no pool or effectively empty.
+
+promote a captured token by re-running discovery (its `promotable available
+tokens` snippet block), giving it a fresh unused id, and wiring a proxy and
+anchor source, then moving it into `tokens`.
 
 weth-quoted pools and dollarization: a weth or native-eth pool prices a stock
 in eth, not dollars. the reader dollarizes it by multiplying price and depth by

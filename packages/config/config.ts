@@ -6,9 +6,11 @@
 // secrets never live here. private keys and service-role keys come from env
 // vars only. see .env.example at the repo root for the full documented list.
 //
-// values that must be discovered from official robinhood chain docs or
-// supplied by the operator are obvious uppercase placeholders. SETUP.md lists
-// every one of them in fill-in order. do not guess these values.
+// chain facts and token addresses below are verified from official sources
+// (docs.robinhood.com/chain/contracts, developers.uniswap.org) as of july
+// 2026. pool addresses are not published as a table; they are resolved from
+// the v3 factory by scripts/discover-pools.ts and pasted in per token. until
+// discovery runs, each token's pool is null and live mode refuses to boot.
 
 // ---------------------------------------------------------------------------
 // env helpers. env vars override the defaults written here so deployments can
@@ -38,25 +40,67 @@ function envBool(key: string, fallback: boolean): boolean {
 
 // ---------------------------------------------------------------------------
 // chain. robinhood chain is a permissionless arbitrum orbit l2, evm
-// compatible, eth for gas, roughly 100ms blocks.
+// compatible, eth for gas, roughly 100ms blocks. verified from
+// docs.robinhood.com/chain.
 // ---------------------------------------------------------------------------
 
 export const chain = {
   name: "robinhood chain",
-  // PLACEHOLDER: fill FLETCH_CHAIN_ID in .env from official robinhood chain
-  // docs. 0 is an invalid chain id and will fail loudly at startup.
-  chainId: envNum("FLETCH_CHAIN_ID", 0),
-  // PLACEHOLDER: fill FLETCH_RPC_URL in .env from official robinhood chain
-  // docs. https json-rpc endpoint.
-  rpcUrl: env("FLETCH_RPC_URL", "RPC_URL_PLACEHOLDER"),
-  // PLACEHOLDER: block explorer base url, used for tx links in the dashboard.
-  explorerBaseUrl: env("FLETCH_EXPLORER_URL", "EXPLORER_URL_PLACEHOLDER"),
+  chainId: envNum("FLETCH_CHAIN_ID", 4663),
+  // public endpoint is rate limited. for production set FLETCH_RPC_URL to an
+  // alchemy or quicknode robinhood chain url. the indexer should not run
+  // against the public endpoint.
+  rpcUrl: env("FLETCH_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
+  explorerBaseUrl: env("FLETCH_EXPLORER_URL", "https://robinhoodchain.blockscout.com"),
+  // blockscout verifier base for forge contract verification.
+  verifierUrl: env("FLETCH_VERIFIER_URL", "https://robinhoodchain.blockscout.com/api/"),
   // informational. used to sanity-check block timestamp drift, not for math.
   expectedBlockTimeMs: 100,
-  // PLACEHOLDER: FletchCommits contract address, known after deploy (phase 4
-  // of SETUP.md).
+  // PLACEHOLDER: FletchCommits contract address, known after deploy (see
+  // SETUP.md). the publisher handles this being unset gracefully.
   commitsContract: env("FLETCH_COMMITS_ADDRESS", "0xFLETCH_COMMITS_PLACEHOLDER") as `0x${string}`,
 } as const;
+
+// ---------------------------------------------------------------------------
+// uniswap v3 on robinhood chain. verified from developers.uniswap.org
+// (robinhood chain deployments). v2, v3, v4, and uniswapx are all live;
+// fletch v1 reads v3 pools.
+// ---------------------------------------------------------------------------
+
+export const uniswap = {
+  factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa" as `0x${string}`,
+  quoterV2: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7" as `0x${string}`,
+  tickLens: "0x7dfd4f31be6814d2906bde155c3e1b146eac1468" as `0x${string}`,
+  multicall: "0x282a3c4d320cc7f0d5eaf56b8029e4b88338f0a3" as `0x${string}`,
+  swapRouter02: "0xcaf681a66d020601342297493863e78c959e5cb2" as `0x${string}`,
+  universalRouter: "0x8876789976decbfcbbbe364623c63652db8c0904" as `0x${string}`,
+  // fee tiers to probe during pool discovery, in hundredths of a bip.
+  feeTiers: [500, 3000, 10000] as const,
+} as const;
+
+// ---------------------------------------------------------------------------
+// quote assets. fair value is dollar denominated, so usdg-quoted pools are
+// preferred. a weth-quoted pool would need an eth/usd proxy to dollarize
+// (flagged by discovery, not wired in v1). addresses verified from
+// docs.robinhood.com/chain/contracts. discovery reads the authoritative
+// decimals from chain per pool.
+// ---------------------------------------------------------------------------
+
+export const quoteAssets = {
+  usdg: {
+    symbol: "usdg",
+    // global dollar.
+    address: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" as `0x${string}`,
+    decimals: 6,
+  },
+  weth: {
+    symbol: "weth",
+    address: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73" as `0x${string}`,
+    decimals: 18,
+  },
+} as const;
+
+export type QuoteSymbol = keyof typeof quoteAssets;
 
 // ---------------------------------------------------------------------------
 // timing. all cycle and polling cadence in one place.
@@ -72,29 +116,36 @@ export const timing = {
   // heartbeat row is written every indexer tick. /health flags the service
   // degraded when the newest heartbeat is older than this.
   heartbeatStaleMs: 120_000,
-  // a proxy tick older than its source stalenessMs is flagged stale and its
-  // weight is zeroed in the drift blend.
 } as const;
 
 // ---------------------------------------------------------------------------
-// tracked tokens. uniswap v3 pools on robinhood chain.
-// pool addresses must come from official robinhood chain docs, defillama, or
-// dune. never guessed. `id` is the stable numeric id used in merkle leaves
-// and the database. never reuse or renumber ids.
+// tracked tokens. the launch set for fletch.
+//
+// `address` is the erc-20 stock token (an erc-8056 scaled-ui token). `pool`
+// is the selected uniswap v3 pool and stays null until discovery fills it
+// (scripts/discover-pools.ts prints a ready-to-paste snippet). `invert` and
+// `quoteDecimals` are also set from discovery. `id` is the stable numeric id
+// used in merkle leaves and the database; never reuse or renumber ids.
+//
+// token addresses verified from docs.robinhood.com/chain/contracts. same
+// ticker at a different address is a fake.
 // ---------------------------------------------------------------------------
 
 export interface TokenConfig {
   id: number;
   symbol: string;
   name: string;
-  // uniswap v3 pool address for token/quote on robinhood chain.
-  pool: `0x${string}`;
-  // if the stock token is token1 in the pool, set invert true so spot is
-  // always quoted as quote-per-stock-token.
+  // erc-20 stock token address (erc-8056).
+  address: `0x${string}`;
+  // which quote the selected pool uses. set by discovery.
+  quote: QuoteSymbol;
+  // selected uniswap v3 pool. null until discovery fills it.
+  pool: `0x${string}` | null;
+  // true when the stock token is token1 in the pool. set by discovery.
   invert: boolean;
   // erc20 decimals of the stock token.
   baseDecimals: number;
-  // erc20 decimals of the quote token (usdc is 6).
+  // erc20 decimals of the quote token. set by discovery.
   quoteDecimals: number;
   // names of proxy sources (below) that inform this token's drift component.
   proxies: string[];
@@ -105,7 +156,9 @@ export const tokens: TokenConfig[] = [
     id: 1,
     symbol: "tsla",
     name: "tesla",
-    pool: "0xPOOL_TSLA",
+    address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+    quote: "usdg",
+    pool: null,
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -115,7 +168,9 @@ export const tokens: TokenConfig[] = [
     id: 2,
     symbol: "aapl",
     name: "apple",
-    pool: "0xPOOL_AAPL",
+    address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+    quote: "usdg",
+    pool: null,
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -125,7 +180,9 @@ export const tokens: TokenConfig[] = [
     id: 3,
     symbol: "nvda",
     name: "nvidia",
-    pool: "0xPOOL_NVDA",
+    address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+    quote: "usdg",
+    pool: null,
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -135,7 +192,9 @@ export const tokens: TokenConfig[] = [
     id: 4,
     symbol: "msft",
     name: "microsoft",
-    pool: "0xPOOL_MSFT",
+    address: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+    quote: "usdg",
+    pool: null,
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -145,7 +204,9 @@ export const tokens: TokenConfig[] = [
     id: 5,
     symbol: "amzn",
     name: "amazon",
-    pool: "0xPOOL_AMZN",
+    address: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+    quote: "usdg",
+    pool: null,
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
@@ -153,12 +214,30 @@ export const tokens: TokenConfig[] = [
   },
 ];
 
+// stock tokens verified on chain but not in the launch set. kept here so the
+// addresses are captured in config; promote an entry into `tokens` (with a
+// fresh id) once its pool has liquidity worth tracking. addresses from
+// docs.robinhood.com/chain/contracts.
+export const availableStockTokens: Record<string, `0x${string}`> = {
+  googl: "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+  meta: "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+  amd: "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+  coin: "0x6330D8C3178a418788dF01a47479c0ce7CCF450b",
+  pltr: "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+  spy: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+  qqq: "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+};
+
 // ---------------------------------------------------------------------------
 // 24/7 proxy signals. generic http price sources that express market
 // direction while the underlying market is closed. the operator wires the
 // real sources. each entry is fetched on the indexer tick with its own
 // timeout, retry budget, and staleness flag. a source that fails repeatedly
 // trips its circuit breaker and is skipped until the cooldown passes.
+//
+// note: a weth-quoted token needs an eth/usd source here to dollarize its
+// pool price. the launch set is usdg-quoted, so none is required yet;
+// discovery flags the requirement if a token is weth-only.
 // ---------------------------------------------------------------------------
 
 export interface ProxySourceConfig {
@@ -255,10 +334,13 @@ export const model = {
   // above full depth. the remainder comes from anchor plus drift.
   onchainWeight: 0.6,
 
-  // pool depth floor, denominated in quote token units (usd for usdc quotes),
+  // pool depth floor, denominated in quote token units (usd for usdg quotes),
   // measured as the ±2% depth captured by the indexer. below this floor the
   // onchain weight scales down linearly toward zero, so a thin pool cannot
-  // drag fair value.
+  // drag fair value. tokenized float is extremely thin at launch, so expect
+  // the onchain weight to sit near zero and fair value to be mostly anchor
+  // plus proxy drift. that is correct behavior; the confidence score reflects
+  // it.
   depthFloorQuote: 50_000,
 
   // hard clamp: the onchain twap may not move fair value more than this
@@ -302,6 +384,18 @@ export const model = {
   marketOpen: {
     onchainWeight: 0.9,
     bandBasePct: 0.002,
+  },
+
+  // corporate action (erc-8056 uiMultiplier change). when the multiplier
+  // changes within a window (split, stock dividend), the engine excludes
+  // pre-change ticks from the twap, flags the cycle, adds this to the band
+  // half-width fraction, and caps confidence for that cycle.
+  corporateAction: {
+    bandWidenPct: 0.03,
+    maxConfidence: 50,
+    // relative difference between two multipliers above which they count as
+    // changed. guards float round-trip noise; a real split is 2x or more.
+    changeRelTolerance: 1e-6,
   },
 } as const;
 
@@ -400,6 +494,10 @@ export function proxiesForToken(symbol: string): ProxySourceConfig[] {
   return proxySources.filter((p) => token.proxies.includes(p.name));
 }
 
+export function quoteAssetFor(token: TokenConfig): (typeof quoteAssets)[QuoteSymbol] {
+  return quoteAssets[token.quote];
+}
+
 // startup validation. call from every service entrypoint. throws on
 // unfilled placeholders unless mock mode is on.
 export function assertConfigReady(): void {
@@ -408,7 +506,9 @@ export function assertConfigReady(): void {
   if (chain.chainId === 0) problems.push("FLETCH_CHAIN_ID is not set");
   if (chain.rpcUrl.includes("PLACEHOLDER")) problems.push("FLETCH_RPC_URL is not set");
   for (const t of tokens) {
-    if (t.pool.includes("POOL_")) problems.push(`pool address for ${t.symbol} is a placeholder`);
+    if (t.pool === null) {
+      problems.push(`pool for ${t.symbol} is not discovered yet (run pnpm discover-pools)`);
+    }
   }
   if (problems.length > 0) {
     throw new Error(

@@ -52,6 +52,12 @@ async function collectPools(): Promise<{ readings: PoolReading[]; errors: string
       readings.push(mockPoolReading(token));
       continue;
     }
+    if (token.pool === null) {
+      // undiscovered pool. assertConfigReady blocks live boot on this, but
+      // stay defensive so a partially-configured token cannot crash a tick.
+      errors.push(`${token.symbol}: pool not discovered`);
+      continue;
+    }
     try {
       readings.push(await readPool(token));
     } catch (err) {

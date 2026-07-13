@@ -87,14 +87,15 @@ const lastVolumeBlock = new Map<string, bigint>();
 
 async function volumeDeltaQuote(
   t: TokenConfig,
+  pool: `0x${string}`,
   currentBlock: bigint
 ): Promise<number> {
-  const from = lastVolumeBlock.get(t.pool);
-  lastVolumeBlock.set(t.pool, currentBlock);
+  const from = lastVolumeBlock.get(pool);
+  lastVolumeBlock.set(pool, currentBlock);
   if (from === undefined || from >= currentBlock) return 0;
   try {
     const logs = await rpcClient().getLogs({
-      address: t.pool,
+      address: pool,
       event: poolAbi[2],
       fromBlock: from + 1n,
       toBlock: currentBlock,
@@ -118,19 +119,23 @@ async function volumeDeltaQuote(
 }
 
 export async function readPool(t: TokenConfig): Promise<PoolReading> {
+  const pool = t.pool;
+  if (pool === null) {
+    throw new Error(`pool for ${t.symbol} is not discovered yet (run pnpm discover-pools)`);
+  }
   let lastError: unknown;
   for (let attempt = 0; attempt <= 3; attempt++) {
     try {
       const c = rpcClient();
       const block = await c.getBlock();
       const [slot0, liquidity] = await Promise.all([
-        c.readContract({ address: t.pool, abi: poolAbi, functionName: "slot0" }),
-        c.readContract({ address: t.pool, abi: poolAbi, functionName: "liquidity" }),
+        c.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }),
+        c.readContract({ address: pool, abi: poolAbi, functionName: "liquidity" }),
       ]);
       const sqrtPriceX96 = slot0[0];
       const spot = spotFromSqrtPrice(sqrtPriceX96, t);
       const depth = depthQuote2pct(sqrtPriceX96, liquidity, t);
-      const volume = await volumeDeltaQuote(t, block.number);
+      const volume = await volumeDeltaQuote(t, pool, block.number);
       return {
         token: t,
         blockNumber: block.number,

@@ -16,7 +16,7 @@ import {
 } from "@/lib/api";
 import { txLink } from "@/lib/constants";
 import { PriceChart } from "@/components/PriceChart";
-import { RegimeBadge, SuspectBadge } from "@/components/RegimeBadge";
+import { CorporateActionBadge, RegimeBadge, SuspectBadge } from "@/components/RegimeBadge";
 
 export default function TokenPage({ params }: { params: { symbol: string } }) {
   const symbol = params.symbol.toLowerCase();
@@ -44,7 +44,8 @@ export default function TokenPage({ params }: { params: { symbol: string } }) {
           <span className="v green" style={{ fontSize: 16 }}>
             {fmtPrice(latest.fairValue)}{" "}
             <span style={{ fontSize: 13 }}>
-              <RegimeBadge regime={latest.regime} /> <SuspectBadge suspect={latest.suspect} />
+              <RegimeBadge regime={latest.regime} /> <SuspectBadge suspect={latest.suspect} />{" "}
+              <CorporateActionBadge corporateAction={latest.corporateAction} />
             </span>
           </span>
           <span className="k">confidence</span>

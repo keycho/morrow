@@ -1,5 +1,6 @@
 // @fletch/engine public surface. pure fair value math, the market calendar,
-// cycle arithmetic, and the merkle commitment scheme. no i/o anywhere.
+// cycle arithmetic, erc-8056 scaled-ui helpers, and the merkle commitment
+// scheme. no i/o anywhere.
 
 export {
   type Regime,
@@ -30,11 +31,20 @@ export {
   type FairValueOutcome,
   type DriftResult,
   type ConfidenceInput,
+  applyCorporateActionFilter,
   liquidityWeightedTwap,
   blendedDrift,
   scoreConfidence,
   computeFairValue,
 } from "./fairvalue.js";
+
+export {
+  type DecodedMultiplier,
+  UI_MULTIPLIER_ONE,
+  decodeUiMultiplier,
+  effectivePerSharePrice,
+  multipliersDiffer,
+} from "./scaledui.js";
 
 export {
   type LeafInput,

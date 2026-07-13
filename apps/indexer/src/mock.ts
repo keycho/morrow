@@ -50,13 +50,17 @@ export function mockPoolReading(t: TokenConfig): PoolReading {
   mockBlock += 300n; // ~30s of 100ms blocks
   // depth wanders between thin and healthy so the depth scaling is visible
   const depth = 20_000 + s.rng() * 180_000;
+  // mock tokens report an unscaled multiplier; no synthetic splits.
   return {
     token: t,
     blockNumber: mockBlock,
     ts: new Date(),
     spot: s.price,
+    rawSpot: s.price,
     depthQuote2pct: depth,
     volumeDeltaQuote: s.rng() * 50_000,
+    uiMultiplier: 1,
+    uiMultiplierMissing: false,
   };
 }
 

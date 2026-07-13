@@ -7,16 +7,23 @@
 //   anchor          last official close price
 //   drift           weighted blend of proxy returns since close, capped
 //   anchor+drift    the off-chain estimate
-//   onchain twap    liquidity-weighted time average of pool spot over the
+//   onchain twap    liquidity-weighted time average of pool price over the
 //                   trailing window, clamped to ±maxOnchainDeviation around
 //                   anchor+drift, weight scaled down as depth falls below
 //                   the floor. a thin pool cannot drag fair value.
 //   fair value      depth-scaled blend of the two
-//   spike guard     onchain move beyond spikeThreshold while proxies are
+//   spike guard     onchain move beyond spikeThreshold while proxies were
 //                   flat clamps output to the band edge and flags suspect.
 //                   suspect rows are published, never hidden.
+//   corporate action if the erc-8056 ui multiplier changed within the
+//                   window, pre-change ticks are excluded from the twap, the
+//                   cycle is flagged corporate_action, the band is widened,
+//                   and confidence is capped. observations carry the
+//                   effective per-share price already, so the split shows up
+//                   as a discontinuity that this guard removes.
 
 import type { Regime } from "./calendar.js";
+import { multipliersDiffer } from "./scaledui.js";
 
 export interface ModelConfig {
   onchainWeight: number;
@@ -42,12 +49,22 @@ export interface ModelConfig {
     onchainWeight: number;
     bandBasePct: number;
   };
+  corporateAction: {
+    bandWidenPct: number;
+    maxConfidence: number;
+    changeRelTolerance: number;
+  };
 }
 
 export interface EngineObservation {
   tsMs: number;
+  // effective per-share price (raw pool price already divided by the ui
+  // multiplier in force at read time).
   spot: number;
   depthQuote: number;
+  // erc-8056 ui multiplier in force at this observation (m = uiMultiplier /
+  // 1e18). 1 for unscaled or non-erc-8056 tokens.
+  uiMultiplier: number;
 }
 
 export interface ProxyInput {
@@ -81,6 +98,8 @@ export interface FairValueComponents {
   effectiveOnchainWeight: number;
   windowMovePct: number;
   proxiesFlat: boolean;
+  // count of ticks dropped from the window because the ui multiplier changed.
+  excludedPreChangeTicks: number;
 }
 
 export interface FairValueResult {
@@ -91,6 +110,7 @@ export interface FairValueResult {
   bandHigh: number;
   regime: Regime;
   suspect: boolean;
+  corporateAction: boolean;
   components: FairValueComponents;
 }
 
@@ -98,12 +118,37 @@ export interface FairValueFailure {
   ok: false;
   reason: string;
   regime: Regime;
+  corporateAction: boolean;
 }
 
 export type FairValueOutcome = FairValueResult | FairValueFailure;
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
+}
+
+// detect an erc-8056 multiplier change within the window and keep only the
+// ticks at the most recent multiplier. the effective per-share price jumps
+// at a split, so mixing pre- and post-change ticks would corrupt the twap
+// and trip the spike guard; excluding the pre-change ticks removes both.
+export function applyCorporateActionFilter(
+  observations: EngineObservation[],
+  relTolerance: number
+): { observations: EngineObservation[]; corporateAction: boolean; excluded: number } {
+  if (observations.length === 0) {
+    return { observations, corporateAction: false, excluded: 0 };
+  }
+  const latest = observations[observations.length - 1]!.uiMultiplier;
+  let changed = false;
+  const kept: EngineObservation[] = [];
+  for (const obs of observations) {
+    if (multipliersDiffer(obs.uiMultiplier, latest, relTolerance)) {
+      changed = true;
+      continue; // pre-change tick, drop it
+    }
+    kept.push(obs);
+  }
+  return { observations: kept, corporateAction: changed, excluded: observations.length - kept.length };
 }
 
 // liquidity-weighted twap. each observation is weighted by the time it was
@@ -225,17 +270,21 @@ export function scoreConfidence(input: ConfidenceInput, cfg: ModelConfig): numbe
 
 export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairValueOutcome {
   const { regime } = input;
+
+  // corporate action: drop pre-change ticks before any pricing math runs.
+  const ca = applyCorporateActionFilter(input.observations, cfg.corporateAction.changeRelTolerance);
+  const observations = ca.observations;
+  const corporateAction = ca.corporateAction;
+
   const { twap, avgDepthFactor, avgDepthQuote } = liquidityWeightedTwap(
-    input.observations,
+    observations,
     input.nowMs,
     cfg.depthFloorQuote
   );
   const driftResult = blendedDrift(input.proxies, input.nowMs, cfg.maxDriftAbs);
 
-  const lastObs = input.observations.length > 0
-    ? input.observations[input.observations.length - 1]!
-    : null;
-  const firstObs = input.observations.length > 0 ? input.observations[0]! : null;
+  const lastObs = observations.length > 0 ? observations[observations.length - 1]! : null;
+  const firstObs = observations.length > 0 ? observations[0]! : null;
   const windowMovePct =
     firstObs && lastObs && firstObs.spot > 0
       ? Math.abs(lastObs.spot / firstObs.spot - 1)
@@ -247,7 +296,7 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
       : null;
 
   if (anchorPlusDrift === null && twap === null) {
-    return { ok: false, reason: "no anchor and no onchain observations", regime };
+    return { ok: false, reason: "no anchor and no onchain observations", regime, corporateAction };
   }
 
   const baseOnchainWeight =
@@ -291,6 +340,12 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     cfg
   );
 
+  // corporate action caps confidence and widens the band for the cycle.
+  if (corporateAction) {
+    confidence = Math.min(confidence, cfg.corporateAction.maxConfidence);
+  }
+  const caBandWiden = corporateAction ? cfg.corporateAction.bandWidenPct : 0;
+
   // spike guard. an onchain move beyond the threshold inside one window,
   // with flat proxies, is treated as manipulation or a broken pool until
   // proven otherwise: clamp to the band edge around anchor+drift, flag it,
@@ -300,6 +355,21 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
   let suspect = false;
 
   const bandBasePct = regime === "market_open" ? cfg.marketOpen.bandBasePct : cfg.band.basePct;
+
+  const components: FairValueComponents = {
+    anchorPlusDrift,
+    drift: driftResult.drift,
+    driftProxiesUsed: driftResult.proxiesUsed,
+    twapRaw: twap,
+    twapClamped,
+    onchainSpot: lastObs ? lastObs.spot : null,
+    avgDepthFactor,
+    avgDepthQuote,
+    effectiveOnchainWeight,
+    windowMovePct,
+    proxiesFlat,
+    excludedPreChangeTicks: ca.excluded,
+  };
 
   if (
     regime !== "market_open" &&
@@ -312,35 +382,24 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     confidence = Math.min(confidence, Math.round(confidence * 0.5));
     const half =
       anchorPlusDrift *
-      (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100));
+        (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100)) +
+      anchorPlusDrift * caBandWiden;
     fair = clamp(fair, anchorPlusDrift - half, anchorPlusDrift + half);
-    const bandLow = anchorPlusDrift - half;
-    const bandHigh = anchorPlusDrift + half;
     return {
       ok: true,
       fairValue: fair,
       confidence,
-      bandLow,
-      bandHigh,
+      bandLow: anchorPlusDrift - half,
+      bandHigh: anchorPlusDrift + half,
       regime,
       suspect,
-      components: {
-        anchorPlusDrift,
-        drift: driftResult.drift,
-        driftProxiesUsed: driftResult.proxiesUsed,
-        twapRaw: twap,
-        twapClamped,
-        onchainSpot: lastObs ? lastObs.spot : null,
-        avgDepthFactor,
-        avgDepthQuote,
-        effectiveOnchainWeight,
-        windowMovePct,
-        proxiesFlat,
-      },
+      corporateAction,
+      components,
     };
   }
 
-  const half = fair * (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100));
+  const half =
+    fair * (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100)) + fair * caBandWiden;
   return {
     ok: true,
     fairValue: fair,
@@ -349,18 +408,7 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     bandHigh: fair + half,
     regime,
     suspect,
-    components: {
-      anchorPlusDrift,
-      drift: driftResult.drift,
-      driftProxiesUsed: driftResult.proxiesUsed,
-      twapRaw: twap,
-      twapClamped,
-      onchainSpot: lastObs ? lastObs.spot : null,
-      avgDepthFactor,
-      avgDepthQuote,
-      effectiveOnchainWeight,
-      windowMovePct,
-      proxiesFlat,
-    },
+    corporateAction,
+    components,
   };
 }

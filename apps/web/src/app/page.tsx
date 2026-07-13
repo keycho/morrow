@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { fmtPct, fmtPrice, usePolled, type FairValue } from "@/lib/api";
-import { RegimeBadge, SuspectBadge } from "@/components/RegimeBadge";
+import { CorporateActionBadge, RegimeBadge, SuspectBadge } from "@/components/RegimeBadge";
 import { Sparkline } from "@/components/Sparkline";
 
 function SpreadCell({ row }: { row: FairValue }) {
@@ -68,6 +68,7 @@ export default function Home() {
                     {row.symbol}
                   </Link>{" "}
                   <SuspectBadge suspect={row.suspect} />
+                  <CorporateActionBadge corporateAction={row.corporateAction} />
                 </td>
                 <td className="num green">{fmtPrice(row.fairValue)}</td>
                 <td className="num">{row.confidence}</td>

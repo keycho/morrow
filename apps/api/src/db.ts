@@ -35,6 +35,7 @@ export interface FairValueApiRow {
   bandHigh: number;
   regime: string;
   suspect: boolean;
+  corporateAction: boolean;
   anchorPrice: number | null;
   drift: number | null;
   onchainTwap: number | null;
@@ -55,6 +56,7 @@ function mapFairValue(row: Record<string, unknown>): FairValueApiRow {
     bandHigh: Number(row.band_high),
     regime: String(row.regime),
     suspect: Boolean(row.suspect),
+    corporateAction: Boolean(row.corporate_action),
     anchorPrice: row.anchor_price === null ? null : Number(row.anchor_price),
     drift: row.drift === null ? null : Number(row.drift),
     onchainTwap: row.onchain_twap === null ? null : Number(row.onchain_twap),

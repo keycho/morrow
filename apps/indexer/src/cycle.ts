@@ -79,6 +79,7 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
             tsMs: o.ts.getTime(),
             spot: o.poolSpot,
             depthQuote: o.depthQuote2pct,
+            uiMultiplier: o.uiMultiplier,
           })),
           proxies,
         },
@@ -100,6 +101,7 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
         bandHigh: outcome.bandHigh,
         regime: outcome.regime,
         suspect: outcome.suspect,
+        corporateAction: outcome.corporateAction,
         anchorPrice: anchor ? anchor.price : null,
         drift: outcome.components.drift,
         onchainTwap: outcome.components.twapRaw,
@@ -112,6 +114,13 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
           token: token.symbol,
           cycleId,
           windowMovePct: outcome.components.windowMovePct,
+        });
+      }
+      if (outcome.corporateAction) {
+        log.warn("corporate action detected, cycle flagged", {
+          token: token.symbol,
+          cycleId,
+          excludedPreChangeTicks: outcome.components.excludedPreChangeTicks,
         });
       }
     } catch (err) {

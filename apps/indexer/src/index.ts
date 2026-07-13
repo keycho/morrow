@@ -86,6 +86,8 @@ async function tick(): Promise<void> {
     poolSpot: r.spot,
     depthQuote2pct: r.depthQuote2pct,
     volumeDelta: r.volumeDeltaQuote,
+    uiMultiplier: r.uiMultiplier,
+    uiMultiplierMissing: r.uiMultiplierMissing,
     source: mockMode ? "mock" : "pool",
   }));
 

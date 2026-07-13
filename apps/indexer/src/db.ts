@@ -57,9 +57,12 @@ export interface ObservationRow {
   tokenId: number;
   blockNumber: bigint;
   ts: Date;
+  // effective per-share price (raw pool price / ui multiplier).
   poolSpot: number;
   depthQuote2pct: number;
   volumeDelta: number;
+  uiMultiplier: number;
+  uiMultiplierMissing: boolean;
   source: "pool" | "mock";
 }
 
@@ -69,9 +72,19 @@ export async function insertObservations(rows: ObservationRow[]): Promise<void> 
   try {
     for (const r of rows) {
       await client.query(
-        `insert into observations (token_id, block_number, ts, pool_spot, depth_quote_2pct, volume_delta, source)
-         values ($1, $2, $3, $4, $5, $6, $7)`,
-        [r.tokenId, r.blockNumber.toString(), r.ts, r.poolSpot, r.depthQuote2pct, r.volumeDelta, r.source]
+        `insert into observations (token_id, block_number, ts, pool_spot, depth_quote_2pct, volume_delta, ui_multiplier, ui_multiplier_missing, source)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          r.tokenId,
+          r.blockNumber.toString(),
+          r.ts,
+          r.poolSpot,
+          r.depthQuote2pct,
+          r.volumeDelta,
+          r.uiMultiplier,
+          r.uiMultiplierMissing,
+          r.source,
+        ]
       );
     }
   } finally {
@@ -114,6 +127,7 @@ export interface FairValueRow {
   bandHigh: number;
   regime: string;
   suspect: boolean;
+  corporateAction: boolean;
   anchorPrice: number | null;
   drift: number | null;
   onchainTwap: number | null;
@@ -128,8 +142,8 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
     for (const r of rows) {
       await client.query(
         `insert into fair_values (token_id, cycle_id, ts, fair_value, confidence, band_low, band_high,
-                                  regime, suspect, anchor_price, drift, onchain_twap, onchain_spot, depth_quote)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                                  regime, suspect, corporate_action, anchor_price, drift, onchain_twap, onchain_spot, depth_quote)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          on conflict (token_id, cycle_id) do update set
            ts = excluded.ts,
            fair_value = excluded.fair_value,
@@ -138,6 +152,7 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
            band_high = excluded.band_high,
            regime = excluded.regime,
            suspect = excluded.suspect,
+           corporate_action = excluded.corporate_action,
            anchor_price = excluded.anchor_price,
            drift = excluded.drift,
            onchain_twap = excluded.onchain_twap,
@@ -153,6 +168,7 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
           r.bandHigh,
           r.regime,
           r.suspect,
+          r.corporateAction,
           r.anchorPrice,
           r.drift,
           r.onchainTwap,
@@ -259,6 +275,7 @@ export interface ObservationForEngine {
   ts: Date;
   poolSpot: number;
   depthQuote2pct: number;
+  uiMultiplier: number;
 }
 
 export async function recentObservations(
@@ -266,7 +283,7 @@ export async function recentObservations(
   windowSeconds: number
 ): Promise<ObservationForEngine[]> {
   const res = await db().query(
-    `select ts, pool_spot, depth_quote_2pct
+    `select ts, pool_spot, depth_quote_2pct, ui_multiplier
      from observations
      where token_id = $1 and ts > now() - ($2 || ' seconds')::interval
      order by ts asc`,
@@ -276,6 +293,7 @@ export async function recentObservations(
     ts: new Date(row.ts),
     poolSpot: Number(row.pool_spot),
     depthQuote2pct: Number(row.depth_quote_2pct),
+    uiMultiplier: Number(row.ui_multiplier),
   }));
 }
 

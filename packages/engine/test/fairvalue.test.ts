@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyCorporateActionFilter,
   blendedDrift,
   computeFairValue,
   liquidityWeightedTwap,
@@ -26,18 +27,26 @@ const cfg: ModelConfig = {
     proxyDisagreementFullPct: 0.03,
   },
   marketOpen: { onchainWeight: 0.9, bandBasePct: 0.002 },
+  corporateAction: { bandWidenPct: 0.03, maxConfidence: 50, changeRelTolerance: 1e-6 },
 };
 
 const NOW = Date.UTC(2026, 6, 11, 12, 0, 0); // saturday noon utc
 
-// n observations spread over the trailing hour, newest at `now`.
-function flatObservations(spot: number, depth: number, n = 12): EngineObservation[] {
+// n observations spread over the trailing hour, newest at `now`. every
+// observation carries a ui multiplier (default 1 = unscaled).
+function flatObservations(
+  spot: number,
+  depth: number,
+  n = 12,
+  multiplier = 1
+): EngineObservation[] {
   const out: EngineObservation[] = [];
   for (let i = 0; i < n; i++) {
     out.push({
       tsMs: NOW - (n - 1 - i) * 5 * 60_000,
       spot,
       depthQuote: depth,
+      uiMultiplier: multiplier,
     });
   }
   return out;
@@ -71,8 +80,8 @@ function compute(input: Partial<FairValueInput>): FairValueResult {
 describe("liquidity weighted twap", () => {
   it("weights by time and depth", () => {
     const obs: EngineObservation[] = [
-      { tsMs: NOW - 20 * 60_000, spot: 100, depthQuote: 100_000 },
-      { tsMs: NOW - 10 * 60_000, spot: 110, depthQuote: 10_000 }, // thin
+      { tsMs: NOW - 20 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 1 },
+      { tsMs: NOW - 10 * 60_000, spot: 110, depthQuote: 10_000, uiMultiplier: 1 }, // thin
     ];
     const { twap } = liquidityWeightedTwap(obs, NOW, cfg.depthFloorQuote);
     // thin second leg gets a 0.2 depth factor, so twap sits near 100
@@ -165,10 +174,10 @@ describe("spike clamp", () => {
     // 103, so the clamp binds.
     const obs: EngineObservation[] = [];
     for (let i = 0; i < 6; i++) {
-      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000 });
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 1 });
     }
     for (let i = 6; i < 12; i++) {
-      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 115, depthQuote: 100_000 });
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 115, depthQuote: 100_000, uiMultiplier: 1 });
     }
     const result = compute({ observations: obs });
     expect(result.suspect).toBe(true);
@@ -183,16 +192,101 @@ describe("spike clamp", () => {
   it("does not flag the same move when proxies confirm it", () => {
     const obs: EngineObservation[] = [];
     for (let i = 0; i < 6; i++) {
-      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000 });
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 1 });
     }
     for (let i = 6; i < 12; i++) {
-      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 115, depthQuote: 100_000 });
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 115, depthQuote: 100_000, uiMultiplier: 1 });
     }
     const result = compute({
       observations: obs,
       proxies: [proxy("a", 100, 114), proxy("b", 100, 115)],
     });
     expect(result.suspect).toBe(false);
+  });
+});
+
+describe("corporate action (erc-8056)", () => {
+  it("multiplier of 1 throughout is a normal cycle, not a corporate action", () => {
+    const result = compute({
+      observations: flatObservations(100, 100_000, 12, 1),
+    });
+    expect(result.corporateAction).toBe(false);
+    expect(result.components.excludedPreChangeTicks).toBe(0);
+    expect(result.fairValue).toBeCloseTo(100, 6);
+  });
+
+  it("a missing-function token reads as multiplier 1 and prices normally", () => {
+    // the pool reader treats a token without uiMultiplier() as m = 1 (and
+    // flags the tick missing). at the engine that is a constant multiplier,
+    // so no corporate action fires and fair value is unaffected. the decode
+    // itself is pinned in scaledui.test.ts.
+    const result = compute({
+      observations: flatObservations(100, 100_000, 12, 1),
+      proxies: [proxy("a", 100, 101), proxy("b", 100, 101)],
+    });
+    expect(result.corporateAction).toBe(false);
+    expect(result.fairValue).toBeCloseTo(0.6 * 100 + 0.4 * 101, 6);
+  });
+
+  it("a 10:1 split mid-window is flagged, pre-change ticks excluded, band widened", () => {
+    // first half at m=1 with effective per-share price 1000 (pre-split),
+    // second half at m=10 with effective per-share price 100 (post-split).
+    // the operator has re-based the anchor to the post-split 100.
+    const obs: EngineObservation[] = [];
+    for (let i = 0; i < 6; i++) {
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 1000, depthQuote: 100_000, uiMultiplier: 1 });
+    }
+    for (let i = 6; i < 12; i++) {
+      obs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 10 });
+    }
+    const result = compute({ anchorPrice: 100, observations: obs });
+
+    expect(result.corporateAction).toBe(true);
+    // the six pre-split ticks are dropped from the twap window
+    expect(result.components.excludedPreChangeTicks).toBe(6);
+    // the split jump never reaches the spike guard
+    expect(result.suspect).toBe(false);
+    // twap over the surviving post-split ticks is 100, anchor+drift is 100
+    expect(result.fairValue).toBeCloseTo(100, 6);
+    // confidence is capped at the corporate-action ceiling
+    expect(result.confidence).toBeLessThanOrEqual(50);
+    // the band carries at least the widen contribution (2 x 0.03 of fair)
+    const width = (result.bandHigh - result.bandLow) / result.fairValue;
+    expect(width).toBeGreaterThanOrEqual(0.06);
+  });
+
+  it("a split cycle has a wider band than the same cycle without the flag", () => {
+    const splitObs: EngineObservation[] = [];
+    for (let i = 0; i < 6; i++) {
+      splitObs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 1000, depthQuote: 100_000, uiMultiplier: 1 });
+    }
+    for (let i = 6; i < 12; i++) {
+      splitObs.push({ tsMs: NOW - (11 - i) * 5 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 10 });
+    }
+    const split = compute({ anchorPrice: 100, observations: splitObs });
+    // same surviving prices, but no multiplier change: constant m=10, no flag
+    const steady = compute({
+      anchorPrice: 100,
+      observations: flatObservations(100, 100_000, 6, 10),
+    });
+    expect(steady.corporateAction).toBe(false);
+    const splitWidth = (split.bandHigh - split.bandLow) / split.fairValue;
+    const steadyWidth = (steady.bandHigh - steady.bandLow) / steady.fairValue;
+    expect(splitWidth).toBeGreaterThan(steadyWidth);
+  });
+
+  it("filter keeps only the latest-multiplier ticks", () => {
+    const obs = [
+      { tsMs: NOW - 30 * 60_000, spot: 1000, depthQuote: 100_000, uiMultiplier: 1 },
+      { tsMs: NOW - 20 * 60_000, spot: 1000, depthQuote: 100_000, uiMultiplier: 1 },
+      { tsMs: NOW - 10 * 60_000, spot: 100, depthQuote: 100_000, uiMultiplier: 10 },
+      { tsMs: NOW, spot: 100, depthQuote: 100_000, uiMultiplier: 10 },
+    ];
+    const filtered = applyCorporateActionFilter(obs, cfg.corporateAction.changeRelTolerance);
+    expect(filtered.corporateAction).toBe(true);
+    expect(filtered.excluded).toBe(2);
+    expect(filtered.observations).toHaveLength(2);
+    expect(filtered.observations.every((o) => o.uiMultiplier === 10)).toBe(true);
   });
 });
 

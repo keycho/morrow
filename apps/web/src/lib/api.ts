@@ -17,6 +17,7 @@ export interface FairValue {
   bandHigh: number;
   regime: string;
   suspect: boolean;
+  corporateAction: boolean;
   anchorPrice: number | null;
   drift: number | null;
   onchainTwap: number | null;

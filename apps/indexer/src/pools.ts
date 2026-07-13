@@ -1,22 +1,29 @@
 // uniswap v3 pool reading on robinhood chain via viem.
 //
 // per token per tick we record:
-//   - pool spot price (quote per stock token, human units)
+//   - effective per-share price (raw pool price adjusted by the erc-8056 ui
+//     multiplier, so a split does not distort the series)
 //   - approximate quote-token liquidity depth within ±2% of spot
 //   - cumulative swap volume delta since the previous tick (quote units)
+//   - the ui multiplier in force, and a flag if the token lacks the function
 //   - block number and timestamp
+//
+// slot0, liquidity, and uiMultiplier are read in one multicall against the
+// robinhood chain multicall contract (address from config). a token that
+// does not expose uiMultiplier() is handled: the multiplier is treated as 1
+// and the tick is flagged missing.
 //
 // depth approximation: we assume the in-range liquidity L is constant across
 // the ±2% span (no tick-crossing simulation). that is a deliberate v1
 // simplification; it is a gauge for weighting, not a settlement number.
+//
+// note: this assumes the quote is a dollar stablecoin (usdg). a weth-quoted
+// token would need an eth/usd rate to dollarize the price; discovery flags
+// such tokens and they are excluded from the usdg launch set.
 
-import {
-  createPublicClient,
-  http,
-  parseAbi,
-  type PublicClient,
-} from "viem";
-import { chain, tokens, type TokenConfig } from "@fletch/config";
+import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
+import { chain, tokens, uniswap, type TokenConfig } from "@fletch/config";
+import { decodeUiMultiplier, effectivePerSharePrice } from "@fletch/engine";
 import { log } from "./log.js";
 import { backoffDelayMs, sleep } from "./breaker.js";
 
@@ -25,6 +32,8 @@ const poolAbi = parseAbi([
   "function liquidity() view returns (uint128)",
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
 ]);
+
+const erc8056Abi = parseAbi(["function uiMultiplier() view returns (uint256)"]);
 
 const Q96 = 2 ** 96;
 
@@ -46,9 +55,16 @@ export interface PoolReading {
   token: TokenConfig;
   blockNumber: bigint;
   ts: Date;
+  // effective per-share price (raw pool price / ui multiplier).
   spot: number;
+  // raw per-token pool price before the ui multiplier, kept for logging.
+  rawSpot: number;
   depthQuote2pct: number;
   volumeDeltaQuote: number;
+  // ui multiplier in force, m = uiMultiplier / 1e18.
+  uiMultiplier: number;
+  // true when the token does not expose uiMultiplier().
+  uiMultiplierMissing: boolean;
 }
 
 // raw v3 price is token1-per-token0 in raw units: (sqrtPriceX96 / 2^96)^2.
@@ -111,7 +127,7 @@ async function volumeDeltaQuote(
   } catch (err) {
     // volume is best effort. a failed log query must not sink the tick.
     log.warn("swap log query failed", {
-      pool: t.pool,
+      pool,
       message: err instanceof Error ? err.message : String(err),
     });
     return 0;
@@ -128,21 +144,44 @@ export async function readPool(t: TokenConfig): Promise<PoolReading> {
     try {
       const c = rpcClient();
       const block = await c.getBlock();
-      const [slot0, liquidity] = await Promise.all([
-        c.readContract({ address: pool, abi: poolAbi, functionName: "slot0" }),
-        c.readContract({ address: pool, abi: poolAbi, functionName: "liquidity" }),
-      ]);
-      const sqrtPriceX96 = slot0[0];
-      const spot = spotFromSqrtPrice(sqrtPriceX96, t);
+
+      // slot0, liquidity, and the erc-8056 ui multiplier in one multicall.
+      // allowFailure lets a token without uiMultiplier() degrade to m = 1.
+      const [slot0Res, liquidityRes, multiplierRes] = await c.multicall({
+        multicallAddress: uniswap.multicall,
+        allowFailure: true,
+        contracts: [
+          { address: pool, abi: poolAbi, functionName: "slot0" },
+          { address: pool, abi: poolAbi, functionName: "liquidity" },
+          { address: t.address, abi: erc8056Abi, functionName: "uiMultiplier" },
+        ],
+      });
+
+      if (slot0Res.status !== "success" || liquidityRes.status !== "success") {
+        throw new Error("slot0 or liquidity read failed");
+      }
+      const sqrtPriceX96 = slot0Res.result[0];
+      const liquidity = liquidityRes.result;
+
+      const rawMultiplier =
+        multiplierRes.status === "success" ? (multiplierRes.result as bigint) : null;
+      const { multiplier, missing } = decodeUiMultiplier(rawMultiplier);
+
+      const rawSpot = spotFromSqrtPrice(sqrtPriceX96, t);
+      const spot = effectivePerSharePrice(rawSpot, multiplier);
       const depth = depthQuote2pct(sqrtPriceX96, liquidity, t);
       const volume = await volumeDeltaQuote(t, pool, block.number);
+
       return {
         token: t,
         blockNumber: block.number,
         ts: new Date(Number(block.timestamp) * 1000),
         spot,
+        rawSpot,
         depthQuote2pct: depth,
         volumeDeltaQuote: volume,
+        uiMultiplier: multiplier,
+        uiMultiplierMissing: missing,
       };
     } catch (err) {
       lastError = err;

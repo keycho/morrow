@@ -1,0 +1,27 @@
+{
+  "name": "@fletch/rhscan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "indexer and database layer for a robinhood chain block explorer",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "migrate": "tsx src/migrate.ts",
+    "backfill": "MODE=backfill tsx src/index.ts",
+    "tail": "MODE=tail tsx src/index.ts",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "echo no unit tests yet, transform decoding is validated against live rpc"
+  },
+  "dependencies": {
+    "pino": "^10.3.0",
+    "postgres": "^3.4.5",
+    "viem": "^2.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

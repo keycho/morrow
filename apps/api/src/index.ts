@@ -17,13 +17,15 @@
 // limits), and an x402 payment-required path on the price endpoints for
 // agent pay-per-query (skeleton; settlement behind an interface).
 
-import Fastify, { type FastifyError, type FastifyRequest } from "fastify";
+import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { api, disclaimer } from "@fletch/config";
+import { api, disclaimer, ops, telegram } from "@fletch/config";
+import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
 import { resolveTier, type Tier } from "./auth.js";
 import { closeDb } from "./db.js";
 import { createX402Middleware, UnwiredVerifier } from "./x402.js";
+import { record5xx, startOpsMonitor } from "./opsmonitor.js";
 import { registerPriceRoutes } from "./routes/prices.js";
 import { registerCommitRoutes } from "./routes/commits.js";
 import { registerAccuracyRoutes } from "./routes/accuracy.js";
@@ -44,12 +46,23 @@ async function main(): Promise<void> {
 
   await app.register(cors, { origin: api.corsOrigin });
 
+  // ops alerter: logs and pages the private telegram ops channel.
+  const alerter = new OpsAlerter(ops.alertCooldownMs, [
+    logTransport,
+    makeTelegramTransport(telegram.ops),
+  ]);
+
   // resolve the caller tier before the rate limiter runs
   app.addHook("onRequest", async (req) => {
     const tiered = req as TieredRequest;
     const { tier, keyHash } = await resolveTier(req);
     tiered.fletchTier = tier;
     tiered.fletchKeyHash = keyHash;
+  });
+
+  // record 5xx responses for the spike monitor.
+  app.addHook("onResponse", async (_req: FastifyRequest, reply: FastifyReply) => {
+    if (reply.statusCode >= 500) record5xx();
   });
 
   await app.register(rateLimit, {
@@ -90,7 +103,15 @@ async function main(): Promise<void> {
     void reply.code(statusCode).send({ error: "internal error", disclaimer });
   });
 
+  const stopMonitor = startOpsMonitor(alerter);
+
+  // graceful shutdown: fastify drains in-flight requests before closing.
+  let shuttingDown = false;
   const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info("draining, closing after in-flight requests");
+    stopMonitor();
     await app.close();
     await closeDb();
     process.exit(0);
@@ -100,10 +121,25 @@ async function main(): Promise<void> {
 
   await app.listen({ port: api.port, host: api.host });
   app.log.info(`fletch api listening on ${api.host}:${api.port}`);
+
+  // unhandled worker crash: page the ops channel, then exit non-zero.
+  process.on("uncaughtException", (err) => {
+    void alerter
+      .alert({ key: "api-crash", severity: "page", title: "api crashed", message: err.message })
+      .finally(() => process.exit(1));
+  });
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
+  const message = err instanceof Error ? err.message : String(err);
   // eslint-disable-next-line no-console
-  console.error("fatal:", err instanceof Error ? err.message : err);
+  console.error("fatal:", message);
+  const alerter = new OpsAlerter(ops.alertCooldownMs, [
+    logTransport,
+    makeTelegramTransport(telegram.ops),
+  ]);
+  await alerter
+    .alert({ key: "api-crash", severity: "page", title: "api failed to start", message })
+    .catch(() => undefined);
   process.exit(1);
 });

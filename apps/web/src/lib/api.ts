@@ -98,9 +98,18 @@ export interface AccuracyPayload {
   note?: string;
 }
 
+export interface Subsystem {
+  name: string;
+  status: "ok" | "degraded" | "down";
+  lastSuccess: string | null;
+  ageMs: number | null;
+  description: string;
+}
+
 export interface HealthPayload {
   status: "ok" | "degraded" | "down";
   mockMode: boolean;
+  subsystems: Subsystem[];
   indexer: { lastHeartbeat: string; ageMs: number | null; ok: boolean } | null;
   publisher: {
     lastHeartbeat: string;

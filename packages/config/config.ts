@@ -613,6 +613,19 @@ export const api = {
 
 export const ops = {
   alertCooldownMs: envNum("FLETCH_OPS_COOLDOWN_MS", 1_800_000),
+  // page when the indexer heartbeat is older than this many cycles.
+  heartbeatStaleCycles: envNum("FLETCH_OPS_HEARTBEAT_STALE_CYCLES", 3),
+  // page after this many consecutive ticks with rpc/pool read failures.
+  rpcFailureTicks: envNum("FLETCH_OPS_RPC_FAILURE_TICKS", 3),
+  // page when the publisher wallet balance drops below this many eth; the
+  // alert estimates gas runway from gasPerCommitEth.
+  publisherBalanceFloorEth: envNum("FLETCH_OPS_PUBLISHER_FLOOR_ETH", 0.01),
+  gasPerCommitEth: envNum("FLETCH_OPS_GAS_PER_COMMIT_ETH", 0.0002),
+  // api 5xx spike: page when this many 5xx responses occur within the window.
+  api5xxWindowMs: envNum("FLETCH_OPS_5XX_WINDOW_MS", 60_000),
+  api5xxThreshold: envNum("FLETCH_OPS_5XX_THRESHOLD", 5),
+  // how often the api ops monitor polls its conditions.
+  monitorIntervalMs: envNum("FLETCH_OPS_MONITOR_INTERVAL_MS", 60_000),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -655,6 +668,13 @@ export const telegram = {
     dryRun: envBool("TELEGRAM_DRY_RUN", true),
     // one-line footer on every message. data statements only, no advice.
     footer: "informational feed, not trading advice",
+  },
+  // private ops channel. separate token and chat from the public one. dry_run
+  // on by default. secrets from env only.
+  ops: {
+    botToken: env("TELEGRAM_OPS_BOT_TOKEN", ""),
+    chatId: env("TELEGRAM_OPS_CHAT_ID", ""),
+    dryRun: envBool("TELEGRAM_OPS_DRY_RUN", true),
   },
 } as const;
 

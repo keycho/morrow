@@ -12,14 +12,16 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  formatEther,
   http,
   parseAbi,
   type Chain,
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { chain as chainConfig, mockMode } from "@fletch/config";
+import { chain as chainConfig, mockMode, ops } from "@fletch/config";
 import { buildTree, canonicalLeafString, hashLeaf, type LeafInput } from "@fletch/engine";
+import type { OpsAlerter } from "@fletch/telegram/ops";
 import type { CycleOutcome } from "./cycle.js";
 import {
   listUnconfirmedCommits,
@@ -124,7 +126,7 @@ async function sendCommit(
   return { txHash, confirmed: receipt.status === "success" };
 }
 
-export async function publishCycle(outcome: CycleOutcome): Promise<void> {
+export async function publishCycle(outcome: CycleOutcome, alerter?: OpsAlerter): Promise<void> {
   if (outcome.rows.length === 0) {
     log.warn("no fair values this cycle, nothing to commit", { cycleId: outcome.cycleId });
     return;
@@ -165,7 +167,19 @@ export async function publishCycle(outcome: CycleOutcome): Promise<void> {
       txHash,
       onchain: true,
     });
-    log.info("commit published", { cycleId: outcome.cycleId, root: tree.root, txHash });
+    if (confirmed) {
+      log.info("commit published", { cycleId: outcome.cycleId, root: tree.root, txHash });
+      await alerter?.resolve("publisher-commit", "commit publishing recovered");
+    } else {
+      log.error("commit tx reverted", { cycleId: outcome.cycleId, txHash });
+      await alerter?.alert({
+        key: "publisher-commit",
+        severity: "page",
+        title: "commit tx reverted",
+        message: `cycle ${outcome.cycleId} commit tx did not confirm`,
+        detail: { cycleId: outcome.cycleId, txHash },
+      });
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await markCommitStatus(outcome.cycleId, "failed", null);
@@ -174,6 +188,44 @@ export async function publishCycle(outcome: CycleOutcome): Promise<void> {
       cycleId: outcome.cycleId,
       message,
     });
+    await alerter?.alert({
+      key: "publisher-commit",
+      severity: "page",
+      title: "commit publish failed",
+      message: `cycle ${outcome.cycleId}: ${message}`,
+      detail: { cycleId: outcome.cycleId },
+    });
+  }
+}
+
+// publisher wallet gas runway. throttled to one rpc balance read per monitor
+// interval. pages when the balance drops below the floor, estimating how many
+// commits of runway remain, and resolves when it recovers.
+let lastBalanceCheckMs = Number.NEGATIVE_INFINITY;
+
+export async function checkPublisherBalance(alerter: OpsAlerter): Promise<void> {
+  if (!isPublisherConfigured()) return;
+  const now = Date.now();
+  if (now - lastBalanceCheckMs < ops.monitorIntervalMs) return;
+  lastBalanceCheckMs = now;
+
+  const account = privateKeyToAccount(process.env.PUBLISHER_PRIVATE_KEY as Hex);
+  const reader = createPublicClient({ chain: robinhoodChain(), transport: http(chainConfig.rpcUrl) });
+  const balanceWei = await reader.getBalance({ address: account.address });
+  const balanceEth = Number(formatEther(balanceWei));
+  const runwayCommits =
+    ops.gasPerCommitEth > 0 ? Math.floor(balanceEth / ops.gasPerCommitEth) : 0;
+
+  if (balanceEth < ops.publisherBalanceFloorEth) {
+    await alerter.alert({
+      key: "publisher-balance",
+      severity: "page",
+      title: "publisher wallet low",
+      message: `balance ${balanceEth.toFixed(5)} eth below floor ${ops.publisherBalanceFloorEth} eth, about ${runwayCommits} commits of gas runway left`,
+      detail: { address: account.address, balanceEth, runwayCommits },
+    });
+  } else {
+    await alerter.resolve("publisher-balance", `balance recovered to ${balanceEth.toFixed(5)} eth`);
   }
 }
 

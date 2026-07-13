@@ -2,6 +2,8 @@
 // on or the token is unset. dry_run is on by default until the operator sets
 // the token, so nothing is posted before then.
 
+import { sendTelegramMessage } from "./send.js";
+
 export interface SenderConfig {
   botToken: string;
   chatId: string;
@@ -31,15 +33,7 @@ export function makeSender(cfg: SenderConfig): Sender {
   return {
     live: true,
     async send(text: string): Promise<void> {
-      const res = await fetch(`https://api.telegram.org/bot${cfg.botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ chat_id: cfg.chatId, text, disable_web_page_preview: true }),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`telegram send failed: ${res.status} ${body.slice(0, 200)}`);
-      }
+      await sendTelegramMessage(cfg.botToken, cfg.chatId, text);
     },
   };
 }

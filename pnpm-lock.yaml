@@ -41,6 +41,9 @@ importers:
       '@fletch/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@fletch/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
       fastify:
         specifier: ^5.1.0
         version: 5.10.0
@@ -72,6 +75,9 @@ importers:
       '@fletch/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@fletch/telegram':
+        specifier: workspace:*
+        version: link:../../packages/telegram
       pg:
         specifier: ^8.13.0
         version: 8.22.0

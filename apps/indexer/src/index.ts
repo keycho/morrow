@@ -37,19 +37,39 @@ import {
 } from "./proxies.js";
 import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
 import { maybeRunCycle } from "./cycle.js";
-import { publishCycle, reconcileCommits } from "./publisher.js";
+import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publisher.js";
 import { runAnchorScheduler } from "./anchors.js";
-import { OpsAlerter, logTransport } from "./ops.js";
-import { ops } from "@fletch/config";
+import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
+import { ops, telegram } from "@fletch/config";
 import { log } from "./log.js";
 
 let running = true;
 let lastPrunedDay = "";
 let lastCycleId: number | null = null;
 let ticksSinceReconcile = 0;
+let consecutiveRpcFailTicks = 0;
 
-// ops alerter. task 1 uses the logging transport; ops hardening adds telegram.
-const alerter = new OpsAlerter(ops.alertCooldownMs, [logTransport]);
+// interruptible wait so a sigterm during the between-tick sleep wakes at once.
+let wakeup: (() => void) | null = null;
+function interruptibleWait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      wakeup = null;
+      resolve();
+    }, ms);
+    wakeup = () => {
+      clearTimeout(timer);
+      wakeup = null;
+      resolve();
+    };
+  });
+}
+
+// ops alerter: logs and pages the private telegram ops channel.
+const alerter = new OpsAlerter(ops.alertCooldownMs, [
+  logTransport,
+  makeTelegramTransport(telegram.ops),
+]);
 
 async function collectPools(
   ethUsd: EthUsdTick | null
@@ -143,6 +163,26 @@ async function tick(): Promise<void> {
   await insertObservations(observationRows);
   await insertProxyTicks(proxyRows);
 
+  // rpc/pool read failures: page after several consecutive failing ticks
+  // (mock mode never reads rpc). resolve once a clean tick returns.
+  if (!mockMode) {
+    if (errors.length > 0 && readings.length === 0) {
+      consecutiveRpcFailTicks += 1;
+      if (consecutiveRpcFailTicks >= ops.rpcFailureTicks) {
+        await alerter.alert({
+          key: "rpc-failures",
+          severity: "page",
+          title: "rpc failures",
+          message: `${consecutiveRpcFailTicks} consecutive ticks with no pool reads`,
+          detail: { errors },
+        });
+      }
+    } else {
+      consecutiveRpcFailTicks = 0;
+      await alerter.resolve("rpc-failures", "pool reads recovered");
+    }
+  }
+
   // anchor scheduler: insert close/open anchors on schedule (no-op unless
   // automation is enabled). never let it sink the tick.
   try {
@@ -158,13 +198,18 @@ async function tick(): Promise<void> {
     const cycleOutcome = await maybeRunCycle(now);
     if (cycleOutcome) {
       lastCycleId = cycleOutcome.cycleId;
-      await publishCycle(cycleOutcome);
+      await publishCycle(cycleOutcome, alerter);
     }
   } catch (err) {
     log.error("cycle run failed", {
       message: err instanceof Error ? err.message : String(err),
     });
   }
+
+  // publisher wallet gas runway: page when the balance drops below the floor.
+  await checkPublisherBalance(alerter).catch((err) =>
+    log.warn("publisher balance check failed", { message: String(err) })
+  );
 
   // every ~10 ticks, retry anything unconfirmed
   ticksSinceReconcile += 1;
@@ -231,25 +276,46 @@ async function main(): Promise<void> {
       log.error("tick failed", { message });
       await writeHeartbeat("indexer", false, { error: message }).catch(() => undefined);
     }
+    // a sigterm during the tick drains after the in-flight cycle, not mid-way.
+    if (!running) break;
     const elapsed = Date.now() - startedAt;
     const waitMs = Math.max(1_000, timing.indexerPollMs - elapsed);
-    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    await interruptibleWait(waitMs);
   }
+
+  log.info("indexer drained; in-flight cycle finished");
+  await closePool().catch(() => undefined);
 }
 
-process.on("SIGTERM", async () => {
-  log.info("sigterm received, draining");
+// graceful shutdown: stop after the current tick so a commit is never
+// truncated mid-publish across a railway deploy.
+function requestDrain(signal: string): void {
+  log.info(`${signal} received, draining after the in-flight tick`);
   running = false;
-  await closePool().catch(() => undefined);
-  process.exit(0);
-});
+  if (wakeup) wakeup();
+}
+process.on("SIGTERM", () => requestDrain("sigterm"));
+process.on("SIGINT", () => requestDrain("sigint"));
 
 process.on("unhandledRejection", (reason) => {
   log.error("unhandled rejection", { reason: String(reason) });
 });
 
-main().catch(async (err) => {
-  log.error("fatal", { message: err instanceof Error ? err.message : String(err) });
-  await closePool().catch(() => undefined);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // exit naturally so buffered logs flush; force-exit as a backstop in case
+    // a handle lingers. never process.exit() straight away, which would
+    // truncate the drain log.
+    log.info("indexer stopped");
+    setTimeout(() => process.exit(0), 2_000).unref();
+  })
+  .catch(async (err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    log.error("fatal", { message });
+    await alerter
+      .alert({ key: "indexer-crash", severity: "page", title: "indexer crashed", message })
+      .catch(() => undefined);
+    await closePool().catch(() => undefined);
+    setTimeout(() => process.exit(1), 2_000).unref();
+    process.exitCode = 1;
+  });

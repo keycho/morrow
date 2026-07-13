@@ -36,7 +36,7 @@ import {
 } from "./db.js";
 import { fetchProxy } from "./proxies.js";
 import { mockBasePrices } from "./mock.js";
-import type { OpsAlerter } from "./ops.js";
+import type { OpsAlerter } from "@fletch/telegram/ops";
 import { log } from "./log.js";
 
 const calendarConfig: CalendarConfig = {

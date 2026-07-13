@@ -1,10 +1,10 @@
 // ops alerting. an oracle with silent downtime is a product failure, so the
-// worker raises alerts on conditions the operator must know about. this module
-// is the alert plumbing: a cooldown-aware alerter with pluggable transports.
-// task 1 uses the logging transport; ops hardening (task 3) adds a telegram
-// transport and more triggers, and wires resolved notifications.
+// workers raise alerts on conditions the operator must know about. this is the
+// shared plumbing: a cooldown-aware alerter with pluggable transports and
+// resolved notifications. the indexer and the api both use it, both pointing
+// at the private ops telegram channel.
 
-import { log } from "./log.js";
+import { sendTelegramMessage } from "./send.js";
 
 export type OpsSeverity = "warn" | "page";
 
@@ -21,15 +21,41 @@ export type OpsPhase = "alert" | "resolved";
 
 export type OpsTransport = (event: OpsEvent, phase: OpsPhase) => Promise<void>;
 
+function stamp(): string {
+  return new Date().toISOString();
+}
+
 // logs every alert and resolution. never throws.
 export const logTransport: OpsTransport = async (event, phase) => {
   const head = phase === "resolved" ? "ops resolved" : `ops ${event.severity}`;
-  log.warn(`${head}: ${event.title}`, {
-    key: event.key,
-    message: event.message,
-    ...(event.detail ?? {}),
-  });
+  // eslint-disable-next-line no-console
+  console.log(
+    `${stamp()} [${head}] ${event.title}: ${event.message}` +
+      (event.detail ? " " + JSON.stringify(event.detail) : "")
+  );
 };
+
+export interface TelegramTransportConfig {
+  botToken: string;
+  chatId: string;
+  dryRun: boolean;
+}
+
+// sends ops events to a telegram channel, or logs when dry-run or unconfigured.
+export function makeTelegramTransport(cfg: TelegramTransportConfig): OpsTransport {
+  const live = !cfg.dryRun && cfg.botToken !== "" && cfg.chatId !== "";
+  return async (event, phase) => {
+    const head = phase === "resolved" ? "resolved" : event.severity;
+    const lines = [`fletch ops ${head}`, event.title.toLowerCase(), event.message.toLowerCase()];
+    const text = lines.join("\n");
+    if (!live) {
+      // eslint-disable-next-line no-console
+      console.log(`${stamp()} [ops dry-run] ${text.replace(/\n/g, " | ")}`);
+      return;
+    }
+    await sendTelegramMessage(cfg.botToken, cfg.chatId, text);
+  };
+}
 
 export class OpsAlerter {
   private firedAt = new Map<string, number>();

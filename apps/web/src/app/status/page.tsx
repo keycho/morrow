@@ -28,6 +28,30 @@ export default function StatusPage() {
             )}
           </div>
 
+          <h2>subsystems</h2>
+          <table className="data">
+            <thead>
+              <tr>
+                <th>subsystem</th>
+                <th>state</th>
+                <th>detail</th>
+                <th className="num">last success</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.subsystems ?? []).map((s) => (
+                <tr key={s.name}>
+                  <td>{s.name}</td>
+                  <td>
+                    <span className={`badge ${s.status}`}>{s.status}</span>
+                  </td>
+                  <td className="dim">{s.description}</td>
+                  <td className="num dim">{fmtAge(s.ageMs)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
           <div className="grid cols-2">
             <div className="panel">
               <h2 style={{ marginTop: 0 }}>services</h2>

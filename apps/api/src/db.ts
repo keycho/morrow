@@ -249,6 +249,20 @@ export async function newestFairValueTs(): Promise<string | null> {
   return ts ? new Date(ts).toISOString() : null;
 }
 
+export async function newestAnchorTs(): Promise<string | null> {
+  const res = await db().query(`select max(created_at) as ts from anchors`);
+  const ts = res.rows[0]?.ts;
+  return ts ? new Date(ts).toISOString() : null;
+}
+
+export async function newestConfirmedCommitTs(): Promise<string | null> {
+  const res = await db().query(
+    `select max(committed_at) as ts from commits where status = 'confirmed'`
+  );
+  const ts = res.rows[0]?.ts;
+  return ts ? new Date(ts).toISOString() : null;
+}
+
 export async function lastProxyTickPerSource(): Promise<{ source: string; ts: string }[]> {
   const res = await db().query(
     `select distinct on (source) source, ts from proxy_ticks order by source, ts desc`

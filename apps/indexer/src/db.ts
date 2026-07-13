@@ -104,6 +104,68 @@ export async function insertProxyTicks(rows: ProxyTickRow[]): Promise<void> {
   }
 }
 
+export interface FairValueRow {
+  tokenId: number;
+  cycleId: number;
+  ts: Date;
+  fairValue: number;
+  confidence: number;
+  bandLow: number;
+  bandHigh: number;
+  regime: string;
+  suspect: boolean;
+  anchorPrice: number | null;
+  drift: number | null;
+  onchainTwap: number | null;
+  onchainSpot: number | null;
+  depthQuote: number | null;
+}
+
+export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const client = await db().connect();
+  try {
+    for (const r of rows) {
+      await client.query(
+        `insert into fair_values (token_id, cycle_id, ts, fair_value, confidence, band_low, band_high,
+                                  regime, suspect, anchor_price, drift, onchain_twap, onchain_spot, depth_quote)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         on conflict (token_id, cycle_id) do update set
+           ts = excluded.ts,
+           fair_value = excluded.fair_value,
+           confidence = excluded.confidence,
+           band_low = excluded.band_low,
+           band_high = excluded.band_high,
+           regime = excluded.regime,
+           suspect = excluded.suspect,
+           anchor_price = excluded.anchor_price,
+           drift = excluded.drift,
+           onchain_twap = excluded.onchain_twap,
+           onchain_spot = excluded.onchain_spot,
+           depth_quote = excluded.depth_quote`,
+        [
+          r.tokenId,
+          r.cycleId,
+          r.ts,
+          r.fairValue,
+          r.confidence,
+          r.bandLow,
+          r.bandHigh,
+          r.regime,
+          r.suspect,
+          r.anchorPrice,
+          r.drift,
+          r.onchainTwap,
+          r.onchainSpot,
+          r.depthQuote,
+        ]
+      );
+    }
+  } finally {
+    client.release();
+  }
+}
+
 export async function writeHeartbeat(
   service: string,
   ok: boolean,
@@ -119,7 +181,7 @@ export async function pruneOldHeartbeats(): Promise<void> {
   await db().query(`delete from heartbeats where ts < now() - interval '14 days'`);
 }
 
-// --- reads used by the engine cycle (wired in a later phase) ---------------
+// --- reads used by the engine cycle ----------------------------------------
 
 export interface ObservationForEngine {
   ts: Date;
@@ -185,6 +247,26 @@ export async function latestAnchor(tokenId: number, kind: "close" | "open"): Pro
   const row = res.rows[0];
   if (!row) return null;
   return { price: Number(row.price), marketTs: new Date(row.market_ts) };
+}
+
+// mock mode seeds one close anchor per token so the full model path runs
+// before any real anchor has been inserted.
+export async function seedMockAnchors(prices: Record<string, number>, closeTs: Date): Promise<void> {
+  const client = await db().connect();
+  try {
+    for (const t of tokens) {
+      const price = prices[t.symbol];
+      if (price === undefined) continue;
+      await client.query(
+        `insert into anchors (token_id, kind, price, market_ts, source)
+         values ($1, 'close', $2, $3, 'mock')
+         on conflict (token_id, kind, market_ts) do nothing`,
+        [t.id, price, closeTs]
+      );
+    }
+  } finally {
+    client.release();
+  }
 }
 
 export async function closePool(): Promise<void> {

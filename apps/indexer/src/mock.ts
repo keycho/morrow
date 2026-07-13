@@ -16,7 +16,8 @@ function makeRng(seed: number): () => number {
   };
 }
 
-const basePrices: Record<string, number> = {
+// synthetic anchor prices per symbol, also seeded as mock close anchors.
+export const mockBasePrices: Record<string, number> = {
   tsla: 250,
   aapl: 210,
   nvda: 130,
@@ -35,7 +36,7 @@ let mockBlock = 1_000_000n;
 function stateFor(t: TokenConfig): MockState {
   let s = state.get(t.id);
   if (!s) {
-    s = { price: basePrices[t.symbol] ?? 100, rng: makeRng(t.id * 2654435761) };
+    s = { price: mockBasePrices[t.symbol] ?? 100, rng: makeRng(t.id * 2654435761) };
     state.set(t.id, s);
   }
   return s;

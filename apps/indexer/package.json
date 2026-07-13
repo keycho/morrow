@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fletch/config": "workspace:*",
+    "@fletch/engine": "workspace:*",
     "pg": "^8.13.0",
     "tsx": "^4.19.0",
     "viem": "^2.21.0"

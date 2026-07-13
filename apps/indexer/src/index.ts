@@ -6,16 +6,21 @@
 //   - persist raw observations and proxy ticks to supabase
 //   - write a heartbeat row with per-source status
 //
-// the fair value cycle and the commit publisher attach to this worker in
-// later phases. resilience rules: a failed source or a failed tick never
-// crashes the worker; everything retries with backoff on the next tick.
+// every cycle (default 600s):
+//   - run the fair value engine per token and upsert the outputs
+//   - (phase 4) build the merkle tree and commit the root on-chain
+//
+// resilience rules: a failed source or a failed tick never crashes the
+// worker; everything retries with backoff on the next tick.
 
 import { assertConfigReady, mockMode, timing } from "@fletch/config";
+import { lastCloseTime } from "@fletch/engine";
 import {
   closePool,
   insertObservations,
   insertProxyTicks,
   pruneOldHeartbeats,
+  seedMockAnchors,
   upsertTokensFromConfig,
   writeHeartbeat,
   type ObservationRow,
@@ -28,11 +33,13 @@ import {
   recordSuccess,
   type ProxyFetchResult,
 } from "./proxies.js";
-import { mockPoolReading, mockProxyResults } from "./mock.js";
+import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
+import { maybeRunCycle } from "./cycle.js";
 import { log } from "./log.js";
 
 let running = true;
 let lastPrunedDay = "";
+let lastCycleId: number | null = null;
 
 async function collectPools(): Promise<{ readings: PoolReading[]; errors: string[] }> {
   const readings: PoolReading[] = [];
@@ -92,9 +99,20 @@ async function tick(): Promise<void> {
   await insertObservations(observationRows);
   await insertProxyTicks(proxyRows);
 
+  // run the fair value cycle when a new cycle has begun
+  try {
+    const cycleOutcome = await maybeRunCycle(now);
+    if (cycleOutcome) lastCycleId = cycleOutcome.cycleId;
+  } catch (err) {
+    log.error("cycle run failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   const failedProxies = proxyResults.filter((r) => !r.ok).map((r) => r.source.name);
   const detail = {
     tickMs: Date.now() - startedAt,
+    lastCycleId,
     pools: { ok: readings.length, failed: errors, mock: mockMode },
     proxies: {
       ok: proxyRows.length,
@@ -127,6 +145,14 @@ async function main(): Promise<void> {
   log.info("fletch indexer starting", { mockMode, pollMs: timing.indexerPollMs });
   assertConfigReady();
   await upsertTokensFromConfig();
+
+  if (mockMode) {
+    // seed a close anchor per token so the full model path runs on
+    // synthetic data
+    const close = lastCloseTime(new Date());
+    await seedMockAnchors(mockBasePrices, close);
+    log.info("mock anchors seeded", { close: close.toISOString() });
+  }
 
   while (running) {
     const startedAt = Date.now();

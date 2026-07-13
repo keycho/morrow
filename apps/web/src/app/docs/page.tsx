@@ -1,0 +1,134 @@
+// docs page: what the feed is, methodology, api reference, mcp install,
+// the disclaimer. static server component.
+
+import { DISCLAIMER, MARK } from "@/lib/constants";
+
+export default function DocsPage() {
+  return (
+    <div>
+      <h1>what fletch is</h1>
+      <p className="dim">
+        tokenized equities on robinhood chain trade around the clock, but their underlying
+        stocks only price during nyse and nasdaq hours. fletch publishes a fair value estimate
+        per tracked stock token while the underlying market is closed, with a confidence band,
+        and commits a merkle root of every observation on robinhood chain so each published
+        price is later verifiable. a fletcher makes arrows. {MARK}
+      </p>
+
+      <h2>methodology, short version</h2>
+      <div className="panel">
+        <div className="kv">
+          <span className="k">anchor</span>
+          <span className="v">last official market close per token</span>
+          <span className="k">drift</span>
+          <span className="v">
+            weighted blend of 24/7 proxy signal returns since that close, capped; stale proxies
+            are excluded
+          </span>
+          <span className="k">onchain</span>
+          <span className="v">
+            liquidity-weighted twap of the uniswap v3 pool over the trailing window. weight
+            scales down as ±2% depth falls below the floor; the twap is clamped to a maximum
+            deviation around anchor+drift so a thin pool cannot drag fair value
+          </span>
+          <span className="k">fair value</span>
+          <span className="v">depth-scaled blend of the onchain twap and anchor+drift</span>
+          <span className="k">confidence</span>
+          <span className="v">0-100 from input freshness, pool depth, and proxy agreement</span>
+          <span className="k">band</span>
+          <span className="v">widens as confidence falls</span>
+          <span className="k">spike guard</span>
+          <span className="v">
+            an onchain move beyond the spike threshold inside one window with flat proxies is
+            clamped to the band edge and published with suspect=true, never hidden
+          </span>
+          <span className="k">regimes</span>
+          <span className="v">
+            market_open (passthrough, official prices live), after_hours, weekend, holiday.
+            nyse calendar computed in America/New_York including half days
+          </span>
+        </div>
+      </div>
+
+      <h2>verification</h2>
+      <p className="dim">
+        each cycle, every observation becomes a canonical leaf:
+        tokenId|cycleId|fairValue|confidence|timestamp, hashed with keccak256. leaves build a
+        sorted-pair merkle tree; the root is committed to the FletchCommits contract. fetch a
+        proof from /v1/proof, recompute the root yourself, and compare against
+        getCommit(cycleId) on-chain. the commits page runs this check in your browser; the mcp
+        tool verify_observation also checks the chain over rpc.
+      </p>
+
+      <h2>api reference</h2>
+      <table className="data">
+        <thead>
+          <tr>
+            <th>endpoint</th>
+            <th>returns</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>GET /v1/tokens</td>
+            <td className="dim">tracked tokens with ids and pools</td>
+          </tr>
+          <tr>
+            <td>GET /v1/prices</td>
+            <td className="dim">latest fair value for all tokens</td>
+          </tr>
+          <tr>
+            <td>GET /v1/prices/:symbol</td>
+            <td className="dim">latest plus 24h history</td>
+          </tr>
+          <tr>
+            <td>GET /v1/prices/:symbol/history?from&amp;to&amp;limit&amp;offset</td>
+            <td className="dim">paginated history</td>
+          </tr>
+          <tr>
+            <td>GET /v1/commits, /v1/commits/:cycleId</td>
+            <td className="dim">commit records with roots and tx hashes</td>
+          </tr>
+          <tr>
+            <td>GET /v1/proof/:symbol/:cycleId</td>
+            <td className="dim">merkle proof payload for independent verification</td>
+          </tr>
+          <tr>
+            <td>GET /v1/accuracy/:symbol</td>
+            <td className="dim">realized error vs actual next-open prints</td>
+          </tr>
+          <tr>
+            <td>GET /health</td>
+            <td className="dim">heartbeats, cycle age, per-source staleness</td>
+          </tr>
+        </tbody>
+      </table>
+      <p className="dim">
+        anonymous calls are rate limited. send an api key in x-api-key for higher limits. when
+        x402 is enabled, price endpoints answer 402 with payment requirements for agent
+        pay-per-query.
+      </p>
+
+      <h2>mcp install</h2>
+      <p className="dim">
+        the fletch-oracle-mcp package gives agents read access plus independent verification.
+        claude desktop config:
+      </p>
+      <pre className="block">{`{
+  "mcpServers": {
+    "fletch": {
+      "command": "npx",
+      "args": ["-y", "fletch-oracle-mcp"],
+      "env": {
+        "FLETCH_API_URL": "https://your-fletch-api.example",
+        "FLETCH_RPC_URL": "https://your-robinhood-chain-rpc.example"
+      }
+    }
+  }
+}`}</pre>
+
+      <h2>the fine print</h2>
+      <p className="dim">{DISCLAIMER}</p>
+    </div>
+  );
+}

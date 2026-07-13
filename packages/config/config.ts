@@ -204,11 +204,17 @@ export interface TokenConfig {
   proxies: string[];
 }
 
-// pool, invert, and quoteDecimals below come from a discovery run against
-// robinhood chain mainnet (scripts/discover-pools.ts). tsla and nvda have
-// usdg pools and are filled. aapl, msft, and amzn are left null with the
-// reason: re-run discovery against a production rpc before launch to confirm
-// current selection and liquidity, since pools and depth evolve.
+// the launch set comes from a multi-protocol discovery run against robinhood
+// chain mainnet (scripts/discover-pools.ts probes v2, v3, and v4). the deepest
+// usable pools are uniswap v4 usdg pools, identified by v4 pool id (bytes32),
+// not a pool address; the reader reads them through the v4 state-view lens.
+//
+// tsla and nvda: real v4 usdg pools, deeper than their v3 pools (tsla's v3
+// usdg pool is empty, nvda's v4 pool is ~7x deeper), and plausible against a
+// reference (395 vs ~392, 207 vs ~206). filled.
+//
+// aapl, msft, amzn: excluded, left null. see each comment. re-run discovery
+// against a production rpc before launch; pools and depth evolve.
 export const tokens: TokenConfig[] = [
   {
     id: 1,
@@ -216,31 +222,31 @@ export const tokens: TokenConfig[] = [
     name: "tesla",
     address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
     quote: "usdg",
-    protocol: "v3",
-    pool: "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
+    protocol: "v4",
+    pool: "0x8517f8071ae5b831b738052f12125e8e3d6c158b78728aa44ce3b25e5104d32e",
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
     proxies: ["PROXY_TSLA_A"],
   },
   {
-    // no usdg pool. the only aapl pool is weth
-    // (0x8bb3514e2204E1cDF3Ac149EFEe7Ff04D91B719f) and dollarization is now
-    // wired, but that pool is empty: zero liquidity and an implausible price
-    // (~600 usd/share at eth/usd 3500 vs an aapl real of ~230), i.e. an
-    // uninitialized market, not a tradeable one. left null and excluded until
-    // a real pool exists. to enable a genuine weth pool later: set quote to
-    // "weth", fill pool/invert/quoteDecimals from discovery, and wire the
-    // eth/usd source (dollarization.ethUsdSource). remove aapl from the launch
-    // set to boot live without it.
+    // a real v4 usdg pool exists
+    // (0xda4116b5894ee7479e64eae9276e1a2944ef0e5ce863a299d296a15618deee01,
+    // depth ~6500 usd), but its price (~319 usd/share) is ~36% above aapl's
+    // off-hours real (~235), which fails the discovery plausibility gate
+    // (default 25%). the pool is real, not empty, but the tokenized-aapl
+    // market is priced well above the underlying, so tracking it as-is would
+    // drag fair value. excluded until the price converges or the operator
+    // confirms it. to enable: set protocol "v4", pool to that id, invert true,
+    // after re-running discovery with a real anchor reference.
     id: 2,
     symbol: "aapl",
     name: "apple",
     address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
     quote: "usdg",
-    protocol: "v3",
+    protocol: "v4",
     pool: null,
-    invert: false,
+    invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
     proxies: ["PROXY_AAPL_A"],
@@ -251,23 +257,23 @@ export const tokens: TokenConfig[] = [
     name: "nvidia",
     address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
     quote: "usdg",
-    protocol: "v3",
-    pool: "0xB944cec30Bd4175855215D767ADC81F39e5f7E2B",
+    protocol: "v4",
+    pool: "0x3bb34a44f1b2b5f32c034c38a53065a521a47b199700fa9bd19d60985ff24bf1",
     invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
     proxies: ["PROXY_NVDA_A"],
   },
   {
-    // no uniswap v3 pool found on usdg or weth as of discovery. left null and
-    // excluded from the live launch set until a pool exists. remove msft from
-    // the launch set, or re-run discovery, before booting live.
+    // no pool found on any venue (v2, v3, or v4, usdg or weth). left null and
+    // excluded until a pool exists. remove msft from the launch set, or re-run
+    // discovery, before booting live.
     id: 4,
     symbol: "msft",
     name: "microsoft",
     address: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
     quote: "usdg",
-    protocol: "v3",
+    protocol: "v4",
     pool: null,
     invert: false,
     baseDecimals: 18,
@@ -275,15 +281,15 @@ export const tokens: TokenConfig[] = [
     proxies: ["PROXY_MSFT_A"],
   },
   {
-    // no uniswap v3 pool found on usdg or weth as of discovery. left null and
-    // excluded from the live launch set until a pool exists. remove amzn from
-    // the launch set, or re-run discovery, before booting live.
+    // only an empty v4 native-eth pool found (zero liquidity, uninitialized
+    // price). no usable pool on any venue. left null and excluded. remove amzn
+    // from the launch set, or re-run discovery, before booting live.
     id: 5,
     symbol: "amzn",
     name: "amazon",
     address: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
     quote: "usdg",
-    protocol: "v3",
+    protocol: "v4",
     pool: null,
     invert: false,
     baseDecimals: 18,
@@ -417,6 +423,27 @@ export const dollarization = {
     retries: 2,
     stalenessMs: envNum("FLETCH_ETHUSD_STALENESS_MS", 180_000),
   } as ProxySourceConfig,
+} as const;
+
+// ---------------------------------------------------------------------------
+// discovery. thresholds for scripts/discover-pools.ts when it selects a pool
+// across venues.
+// ---------------------------------------------------------------------------
+
+export const discovery = {
+  // flag a pool whose per-share price deviates more than this from the anchor
+  // reference (when one is available). an implausible pool is never selected
+  // silently.
+  plausibilityDeviation: envNum("FLETCH_DISCOVERY_PLAUSIBILITY", 0.25),
+  // a pool with less than this dollar depth is treated as empty and never
+  // selected.
+  emptyDepthUsd: envNum("FLETCH_DISCOVERY_EMPTY_DEPTH_USD", 1),
+  // prefer a usdg pool when its dollar depth is at least this fraction of the
+  // deepest pool found for the token, since fair value is dollar denominated.
+  usdgComparableFactor: 0.5,
+  // depth below the model depth floor for this many consecutive weekly runs
+  // raises an ops alert (task 3).
+  depthBelowFloorRuns: 3,
 } as const;
 
 // circuit breaker for proxy sources and the rpc.

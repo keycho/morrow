@@ -616,6 +616,49 @@ export const ops = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// spreads. the dashboard color-codes the onchain-vs-fair spread by these
+// absolute-percent thresholds. the api echoes them so the client stays
+// config-driven.
+// ---------------------------------------------------------------------------
+
+export const spreads = {
+  // amber at or above this absolute spread percent, red at or above bigPct.
+  warnPct: envNum("FLETCH_SPREAD_WARN_PCT", 1),
+  bigPct: envNum("FLETCH_SPREAD_BIG_PCT", 2),
+} as const;
+
+// ---------------------------------------------------------------------------
+// telegram. the public divergence alert channel. bot token and chat id are
+// secrets and come from env only. dry_run logs instead of sending and is on
+// by default until the operator sets the token. the private ops channel is
+// added by ops hardening (task 3).
+// ---------------------------------------------------------------------------
+
+export const telegram = {
+  public: {
+    // api the alert worker polls for spreads.
+    apiUrl: env("FLETCH_API_URL", "http://localhost:8080"),
+    pollMs: envNum("FLETCH_TG_POLL_MS", 60_000),
+    // absolute spread percent that triggers an alert.
+    alertThresholdPct: envNum("FLETCH_TG_THRESHOLD_PCT", 2),
+    // re-arm only after the spread falls below threshold times this fraction,
+    // so oscillation around the threshold does not spam.
+    rearmFraction: 0.5,
+    // minimum time between alerts for the same token.
+    cooldownMs: envNum("FLETCH_TG_COOLDOWN_MS", 1_800_000),
+    // dashboard base url for the token link in the message.
+    webUrl: env("FLETCH_PUBLIC_WEB_URL", ""),
+    // secrets. env only.
+    botToken: env("TELEGRAM_PUBLIC_BOT_TOKEN", ""),
+    chatId: env("TELEGRAM_PUBLIC_CHAT_ID", ""),
+    // log instead of send. on by default until the token is set.
+    dryRun: envBool("TELEGRAM_DRY_RUN", true),
+    // one-line footer on every message. data statements only, no advice.
+    footer: "informational feed, not trading advice",
+  },
+} as const;
+
+// ---------------------------------------------------------------------------
 // shared copy. the disclaimer rides on every api response and the dashboard
 // footer. lowercase everywhere by design.
 // ---------------------------------------------------------------------------

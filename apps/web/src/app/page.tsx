@@ -41,6 +41,11 @@ export default function Home() {
         stock token with a confidence band. every cycle is committed on-chain and verifiable on
         the <Link href="/commits">commits</Link> page.
       </p>
+      <div className="panel">
+        <span className="green">{">>--->"}</span> see the{" "}
+        <Link href="/spreads">mispricings board</Link> for the biggest onchain-vs-fair
+        divergences right now, sorted by spread.
+      </div>
 
       {error && <div className="error-line">api unreachable: {error}</div>}
       {loading && !data && <div className="dim loading">loading feed</div>}

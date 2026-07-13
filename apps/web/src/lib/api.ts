@@ -26,6 +26,28 @@ export interface FairValue {
   depthQuote: number | null;
 }
 
+export interface SpreadRow {
+  tokenId: number;
+  symbol: string;
+  name: string;
+  fairValue: number;
+  onchainSpot: number | null;
+  spreadPct: number | null;
+  confidence: number;
+  regime: string;
+  suspect: boolean;
+  corporateAction: boolean;
+  anchorStale: boolean;
+  stale: boolean;
+  cycleId: number;
+  ts: string;
+}
+
+export interface SpreadsPayload {
+  rows: SpreadRow[];
+  thresholds: { warnPct: number; bigPct: number };
+}
+
 export interface CommitRow {
   cycleId: number;
   merkleRoot: string;

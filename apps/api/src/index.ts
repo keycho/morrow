@@ -29,6 +29,7 @@ import { registerCommitRoutes } from "./routes/commits.js";
 import { registerAccuracyRoutes } from "./routes/accuracy.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerAdminRoutes } from "./routes/admin.js";
+import { registerSpreadRoutes } from "./routes/spreads.js";
 
 interface TieredRequest extends FastifyRequest {
   fletchTier?: Tier;
@@ -77,6 +78,7 @@ async function main(): Promise<void> {
   registerAccuracyRoutes(app);
   registerHealthRoutes(app);
   registerAdminRoutes(app);
+  registerSpreadRoutes(app);
 
   app.setNotFoundHandler((_req, reply) => {
     void reply.code(404).send({ error: "not found", disclaimer });

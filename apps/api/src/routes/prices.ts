@@ -2,7 +2,7 @@
 // enabled; everything else on the api stays free (rate-limited).
 
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
-import { disclaimer, tokenBySymbol, tokens } from "@fletch/config";
+import { disclaimer, tokenBySymbol, tokens } from "@morrow/config";
 import {
   fairValueHistory,
   fairValueHistoryCount,

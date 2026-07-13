@@ -8,7 +8,7 @@ import {
   tokens,
   wethTokensPresent,
   type TokenConfig,
-} from "@fletch/config";
+} from "@morrow/config";
 import type { PoolReading } from "./pools.js";
 import type { ProxyFetchResult } from "./proxies.js";
 

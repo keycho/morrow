@@ -1,4 +1,4 @@
-// fletch indexer. railway worker.
+// morrow indexer. railway worker.
 //
 // every tick (default 30s):
 //   - read each tracked pool: spot, ±2% depth, volume delta, block, timestamp
@@ -14,8 +14,8 @@
 // crashes the worker; everything retries with backoff on later ticks and the
 // commit reconcile pass re-sends anything unconfirmed.
 
-import { assertConfigReady, dollarization, mockMode, timing, wethTokensPresent } from "@fletch/config";
-import { lastCloseTime, type EthUsdTick } from "@fletch/engine";
+import { assertConfigReady, dollarization, mockMode, timing, wethTokensPresent } from "@morrow/config";
+import { lastCloseTime, type EthUsdTick } from "@morrow/engine";
 import {
   closePool,
   insertObservations,
@@ -41,8 +41,8 @@ import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publish
 import { runAnchorScheduler } from "./anchors.js";
 import { maybeGenerateReceipt } from "./receipts.js";
 import { maybeRunDiscovery } from "./discovery.js";
-import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
-import { ops, telegram } from "@fletch/config";
+import { OpsAlerter, logTransport, makeTelegramTransport } from "@morrow/telegram/ops";
+import { ops, telegram } from "@morrow/config";
 import { log } from "./log.js";
 
 let running = true;
@@ -267,7 +267,7 @@ async function tick(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  log.info("fletch indexer starting", { mockMode, pollMs: timing.indexerPollMs });
+  log.info("morrow indexer starting", { mockMode, pollMs: timing.indexerPollMs });
   assertConfigReady();
   await upsertTokensFromConfig();
 

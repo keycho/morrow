@@ -12,7 +12,7 @@
 // leaf hash = keccak256(utf8 bytes of the canonical string).
 //
 // interior nodes hash the sorted pair (lexicographic byte order), which is
-// exactly what FletchCommits.verify expects on-chain. an odd node at any
+// exactly what MorrowCommits.verify expects on-chain. an odd node at any
 // level is promoted unchanged.
 
 import { concat, keccak256, stringToHex, type Hex } from "viem";

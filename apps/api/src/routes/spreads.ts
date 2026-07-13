@@ -1,11 +1,11 @@
 // spreads endpoint. the mispricings board: onchain pool price (already
-// multiplier-adjusted and dollarized by the reader) versus fletch fair value,
+// multiplier-adjusted and dollarized by the reader) versus morrow fair value,
 // per token, sorted by absolute spread. the dashboard and the telegram alert
 // worker both read this. thresholds are echoed so the client stays
 // config-driven.
 
 import type { FastifyInstance } from "fastify";
-import { disclaimer, spreads, timing } from "@fletch/config";
+import { disclaimer, spreads, timing } from "@morrow/config";
 import { latestFairValues } from "../db.js";
 
 export interface SpreadRow {

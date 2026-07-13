@@ -2,10 +2,10 @@
 // inputs from the database, computes fair value per token, and upserts the
 // results. the commit publisher (phase 4) consumes the rows this produces.
 //
-// everything tunable comes from @fletch/config; all math lives in
-// @fletch/engine as pure functions.
+// everything tunable comes from @morrow/config; all math lives in
+// @morrow/engine as pure functions.
 
-import { anchors, calendar, mockMode, model, timing, tokens, proxiesForToken } from "@fletch/config";
+import { anchors, calendar, mockMode, model, timing, tokens, proxiesForToken } from "@morrow/config";
 import {
   computeFairValue,
   cycleIdFor,
@@ -13,7 +13,7 @@ import {
   regimeAt,
   type CalendarConfig,
   type ProxyInput,
-} from "@fletch/engine";
+} from "@morrow/engine";
 import {
   latestAnchor,
   latestProxyTick,

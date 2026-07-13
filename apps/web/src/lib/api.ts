@@ -1,4 +1,4 @@
-// typed fetch helpers over the fletch api, plus a small polling hook.
+// typed fetch helpers over the morrow api, plus a small polling hook.
 
 "use client";
 

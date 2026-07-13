@@ -6,13 +6,13 @@
 //     sustained window of runs
 // discovery never edits config. it surfaces these for the operator to act on.
 //
-// the discovery itself is @fletch/discovery, shared with the cli, so the
+// the discovery itself is @morrow/discovery, shared with the cli, so the
 // worker and the operator see identical results. idempotent: a per-day guard
 // plus a check of the last stored run keep it to once a week even across a
 // restart within the window.
 
-import { calendar, discovery, discoveryCandidates, mockMode } from "@fletch/config";
-import { wallTimeAt } from "@fletch/engine";
+import { calendar, discovery, discoveryCandidates, mockMode } from "@morrow/config";
+import { wallTimeAt } from "@morrow/engine";
 import {
   analyzeDiscovery,
   lastDiscoveryRunAt,
@@ -20,8 +20,8 @@ import {
   recentDiscoveryResults,
   runDiscovery,
   storeDiscoveryRun,
-} from "@fletch/discovery";
-import type { OpsAlerter } from "@fletch/telegram/ops";
+} from "@morrow/discovery";
+import type { OpsAlerter } from "@morrow/telegram/ops";
 import { db } from "./db.js";
 import { rpcClient } from "./pools.js";
 import { log } from "./log.js";

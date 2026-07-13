@@ -9,7 +9,7 @@
 //       a sustained window of runs. the pool is drying up.
 // discovery never edits config; it only surfaces these for the operator.
 
-import { discovery, type TokenConfig } from "@fletch/config";
+import { discovery, type TokenConfig } from "@morrow/config";
 import type { DiscoveryResult } from "./types.js";
 
 export type DiscoveryFindingKind = "new-pool" | "depth-below-floor";

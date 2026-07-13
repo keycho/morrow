@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// fletch mcp server. read-only tools over the fletch api, plus independent
+// morrow mcp server. read-only tools over the morrow api, plus independent
 // merkle verification against the on-chain commit registry.
 //
 // configuration (env):
-//   FLETCH_API_URL           base url of the fletch api (required)
-//   FLETCH_API_KEY           optional api key, sent as x-api-key
-//   FLETCH_RPC_URL           optional robinhood chain rpc for on-chain checks
-//   FLETCH_COMMITS_ADDRESS   optional contract override; defaults to the
+//   MORROW_API_URL           base url of the morrow api (required)
+//   MORROW_API_KEY           optional api key, sent as x-api-key
+//   MORROW_RPC_URL           optional robinhood chain rpc for on-chain checks
+//   MORROW_COMMITS_ADDRESS   optional contract override; defaults to the
 //                            address advertised in the proof payload
 //
 // this package is standalone on purpose: the merkle math is reimplemented
 // here (sorted-pair keccak256, promoted odd nodes) so verification does not
-// trust any fletch code path that produced the data.
+// trust any morrow code path that produced the data.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -26,10 +26,10 @@ import {
   type Hex,
 } from "viem";
 
-const API_URL = (process.env.FLETCH_API_URL ?? "").replace(/\/$/, "");
-const API_KEY = process.env.FLETCH_API_KEY ?? "";
-const RPC_URL = process.env.FLETCH_RPC_URL ?? "";
-const CONTRACT_OVERRIDE = process.env.FLETCH_COMMITS_ADDRESS ?? "";
+const API_URL = (process.env.MORROW_API_URL ?? "").replace(/\/$/, "");
+const API_KEY = process.env.MORROW_API_KEY ?? "";
+const RPC_URL = process.env.MORROW_RPC_URL ?? "";
+const CONTRACT_OVERRIDE = process.env.MORROW_COMMITS_ADDRESS ?? "";
 
 const commitsAbi = parseAbi([
   "function getCommit(uint64 cycleId) view returns (bytes32 merkleRoot, uint64 observationCount, uint64 committedAt)",
@@ -37,7 +37,7 @@ const commitsAbi = parseAbi([
 
 async function apiGet(path: string): Promise<unknown> {
   if (!API_URL) {
-    throw new Error("FLETCH_API_URL is not set. point it at a fletch api deployment.");
+    throw new Error("MORROW_API_URL is not set. point it at a morrow api deployment.");
   }
   const headers: Record<string, string> = { accept: "application/json" };
   if (API_KEY) headers["x-api-key"] = API_KEY;
@@ -61,7 +61,7 @@ function errorText(err: unknown): {
   return { content: [{ type: "text", text: `error: ${message}` }], isError: true };
 }
 
-// sorted-pair keccak256 fold, identical to FletchCommits.verify on-chain.
+// sorted-pair keccak256 fold, identical to MorrowCommits.verify on-chain.
 function foldProof(leaf: Hex, proof: Hex[]): Hex {
   let node = leaf;
   for (const sibling of proof) {
@@ -73,13 +73,13 @@ function foldProof(leaf: Hex, proof: Hex[]): Hex {
 }
 
 const server = new McpServer({
-  name: "fletch",
+  name: "morrow",
   version: "0.1.0",
 });
 
 server.tool(
   "list_tokens",
-  "list the stock tokens tracked by the fletch oracle, with their ids and pool addresses.",
+  "list the stock tokens tracked by the morrow oracle, with their ids and pool addresses.",
   {},
   async () => {
     try {
@@ -149,7 +149,7 @@ server.tool(
 
 server.tool(
   "verify_observation",
-  "independently verify a published observation: fetch the merkle proof from the api, recompute the leaf hash and root locally, and (when FLETCH_RPC_URL is set) compare against the root committed on robinhood chain. trust nothing the api says without this.",
+  "independently verify a published observation: fetch the merkle proof from the api, recompute the leaf hash and root locally, and (when MORROW_RPC_URL is set) compare against the root committed on robinhood chain. trust nothing the api says without this.",
   {
     symbol: z.string().describe("token symbol, e.g. tsla"),
     cycleId: z.number().int().min(0).describe("commit cycle id"),
@@ -180,7 +180,7 @@ server.tool(
         rootMatchesOnchain?: boolean;
         onchainRoot?: string;
         note?: string;
-      } = { checked: false, note: "set FLETCH_RPC_URL to also check the on-chain commit" };
+      } = { checked: false, note: "set MORROW_RPC_URL to also check the on-chain commit" };
 
       const contractAddress = (CONTRACT_OVERRIDE || contract) as Hex;
       if (RPC_URL && contractAddress && !contractAddress.includes("PLACEHOLDER")) {

@@ -3,9 +3,9 @@
 // idempotent: generateWeeklyReceipt skips a week that already exists, and a
 // per-day guard avoids re-checking every tick.
 
-import { calendar, receipts } from "@fletch/config";
-import { wallTimeAt } from "@fletch/engine";
-import { generateWeeklyReceipt } from "@fletch/receipts";
+import { calendar, receipts } from "@morrow/config";
+import { wallTimeAt } from "@morrow/engine";
+import { generateWeeklyReceipt } from "@morrow/receipts";
 import { db } from "./db.js";
 import { log } from "./log.js";
 

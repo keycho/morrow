@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @title FletchCommits
-/// @notice merkle root registry for the fletch off-hours fair value oracle.
+/// @title MorrowCommits
+/// @notice merkle root registry for the morrow off-hours fair value oracle.
 ///         every cycle the publisher commits the root of all fair value
 ///         observations. anyone can verify a published price against the
 ///         committed root with a merkle proof.
@@ -11,7 +11,7 @@ pragma solidity ^0.8.24;
 ///         interior nodes hash the sorted pair; odd nodes are promoted.
 ///         informational feed. not for use in liquidations, settlement, or
 ///         as sole pricing source. no warranty.
-contract FletchCommits {
+contract MorrowCommits {
     struct Commit {
         bytes32 merkleRoot;
         uint64 observationCount;

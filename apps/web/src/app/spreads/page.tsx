@@ -1,6 +1,6 @@
 "use client";
 
-// the mispricings board. onchain pool price versus fletch fair value per
+// the mispricings board. onchain pool price versus morrow fair value per
 // token, biggest absolute divergence on top. the daily-use page: dense,
 // directional arrows, spread cells color-coded by the api thresholds,
 // auto-refreshing.
@@ -43,7 +43,7 @@ export default function SpreadsPage() {
     <div>
       <h1>mispricings board</h1>
       <p className="dim">
-        onchain pool price against fletch off-hours fair value, biggest divergence first. the
+        onchain pool price against morrow off-hours fair value, biggest divergence first. the
         pool price is multiplier-adjusted and dollarized. a positive spread means the pool
         trades above fair value. refreshes every 15s. these are data statements, not trading
         advice.

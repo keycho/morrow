@@ -1,5 +1,5 @@
 // receipt rendering. pure. turns ReceiptData into a markdown summary and an
-// svg card in the fletch terminal aesthetic (dark, monospace, arrow mark).
+// svg card in the morrow terminal aesthetic (dark, monospace, arrow mark).
 // the svg is rasterized to png separately; keeping it a plain string here
 // makes rendering testable without any image dependency.
 
@@ -27,7 +27,7 @@ function fmtPrice(v: number): string {
 
 export function buildMarkdown(data: ReceiptData): string {
   const lines: string[] = [];
-  lines.push(`# fletch weekly accuracy receipt`);
+  lines.push(`# morrow weekly accuracy receipt`);
   lines.push("");
   lines.push(`\`>>--->\` week ${data.weekStart} to ${data.weekEnd}`);
   lines.push("");
@@ -109,7 +109,7 @@ export function buildSvg(data: ReceiptData): string {
   <rect width="${width}" height="${height}" fill="${COL.bg}"/>
   <rect x="16" y="16" width="${width - 32}" height="${height - 32}" fill="${COL.panel}" stroke="${COL.border}"/>
   <text x="40" y="52" fill="${COL.dim}">&gt;&gt;---&gt;</text>
-  <text x="120" y="52" fill="${COL.green}" font-weight="bold" font-size="20">fletch</text>
+  <text x="120" y="52" fill="${COL.green}" font-weight="bold" font-size="20">morrow</text>
   <text x="40" y="80" fill="${COL.text}" font-size="16">weekly accuracy receipt</text>
   <text x="40" y="102" fill="${COL.dim}">week ${esc(data.weekStart)} to ${esc(data.weekEnd)}</text>
   <line x1="24" y1="${headerH}" x2="${width - 24}" y2="${headerH}" stroke="${COL.border}"/>

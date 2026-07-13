@@ -1,20 +1,20 @@
-// pool discovery cli for fletch, across uniswap v2, v3, and v4.
+// pool discovery cli for morrow, across uniswap v2, v3, and v4.
 //
 // the discovery itself (probing every venue, pricing through the erc-8056 ui
 // multiplier, judging plausibility against anchor references, and selecting a
-// pool per token) lives in @fletch/discovery, shared with the indexer's weekly
+// pool per token) lives in @morrow/discovery, shared with the indexer's weekly
 // run. this file is the operator front end: it reads the rpc url from env,
 // runs one pass, records it in the pool_discovery_runs dataset when a database
 // is configured, and prints either a human table plus a ready-to-paste config
 // snippet, or machine-readable json for tooling.
 //
-// this reads mainnet, so it refuses to run without FLETCH_RPC_URL in env. set
+// this reads mainnet, so it refuses to run without MORROW_RPC_URL in env. set
 // ETH_USD to dollarize weth and native-eth pools for depth comparison. pass
 // --json to print the full run as json (intro logs go to stderr).
 
 import { createPublicClient, http, type Hex } from "viem";
 import pg from "pg";
-import { DISCOVERY_CANDIDATE_ID_BASE, discoveryCandidates, type TokenConfig } from "@fletch/config";
+import { DISCOVERY_CANDIDATE_ID_BASE, discoveryCandidates, type TokenConfig } from "@morrow/config";
 import {
   readAnchorReferences,
   runDiscovery,
@@ -22,7 +22,7 @@ import {
   type DiscoveryResult,
   type Judged,
   type Selection,
-} from "@fletch/discovery";
+} from "@morrow/discovery";
 
 // every token discovery probes, by id, so a selection (launch or available
 // candidate) resolves back to its full config for the snippet.
@@ -151,7 +151,7 @@ function printSnippet(selections: Selection[]): void {
   if (wethSelected) {
     console.log("");
     console.log("a weth or native-eth pool was selected. wire dollarization.ethUsdSource and");
-    console.log("keep FLETCH_ANCHOR/ETH_USD set so the reader can dollarize it.");
+    console.log("keep MORROW_ANCHOR/ETH_USD set so the reader can dollarize it.");
   }
 }
 
@@ -174,15 +174,15 @@ async function main(): Promise<void> {
   // in json mode all human output goes to stderr so stdout is pure json.
   const note = json ? console.error : console.log;
 
-  const rpcUrl = process.env.FLETCH_RPC_URL;
+  const rpcUrl = process.env.MORROW_RPC_URL;
   if (!rpcUrl || rpcUrl === "") {
-    note("fletch pool discovery (v2 + v3 + v4)");
+    note("morrow pool discovery (v2 + v3 + v4)");
     note("");
     note("this reads robinhood chain mainnet and will not run without an rpc url.");
-    note("set FLETCH_RPC_URL to an alchemy or quicknode endpoint (not the public one),");
+    note("set MORROW_RPC_URL to an alchemy or quicknode endpoint (not the public one),");
     note("optionally ETH_USD to dollarize weth/eth pools, and re-run:");
     note("");
-    note("  FLETCH_RPC_URL=https://your-rpc-url ETH_USD=3500 pnpm discover-pools");
+    note("  MORROW_RPC_URL=https://your-rpc-url ETH_USD=3500 pnpm discover-pools");
     note("");
     // json callers get a non-zero exit so a missing rpc is not read as "no pools".
     process.exit(json ? 1 : 0);
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
   const ethUsdRaw = process.env.ETH_USD;
   const ethUsd = ethUsdRaw && Number.isFinite(Number(ethUsdRaw)) ? Number(ethUsdRaw) : null;
 
-  note(`fletch pool discovery against ${rpcUrl.replace(/\/\/.*@/, "//")}`);
+  note(`morrow pool discovery against ${rpcUrl.replace(/\/\/.*@/, "//")}`);
   note(
     ethUsd !== null
       ? `dollarizing weth/eth pools at eth/usd = ${ethUsd}`

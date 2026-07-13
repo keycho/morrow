@@ -13,14 +13,14 @@
 // state-view lens by pool id (stored in `pool`), not a per-pool address.
 // v2 is constant-product: price and depth come from the pair reserves,
 // normalized to the same ±2% quote-depth measure so the engine's depth floor
-// means the same thing across venues (see @fletch/engine poolmath).
+// means the same thing across venues (see @morrow/engine poolmath).
 //
 // depth uses the constant-in-range-liquidity approximation for v3/v4 and the
 // closed-form constant-product move for v2; both are weighting gauges, not
 // settlement numbers.
 
 import { createPublicClient, http, parseAbi, type Hex, type PublicClient } from "viem";
-import { chain, dollarization, tokens, uniswapV4, type TokenConfig } from "@fletch/config";
+import { chain, dollarization, tokens, uniswapV4, type TokenConfig } from "@morrow/config";
 import {
   decodeUiMultiplier,
   depthFromReserves,
@@ -31,7 +31,7 @@ import {
   spotFromReserves,
   spotFromSqrtPriceX96,
   type EthUsdTick,
-} from "@fletch/engine";
+} from "@morrow/engine";
 import { log } from "./log.js";
 import { backoffDelayMs, sleep } from "./breaker.js";
 

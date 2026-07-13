@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Hex } from "viem";
-import { discovery, type TokenConfig } from "@fletch/config";
+import { discovery, type TokenConfig } from "@morrow/config";
 import { analyzeDiscovery, judgePools, selectPool } from "../src/index.js";
 import type { DiscoveredPool, DiscoveryResult, Judged } from "../src/types.js";
 

@@ -2,16 +2,16 @@
 pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {FletchCommits} from "../src/FletchCommits.sol";
+import {MorrowCommits} from "../src/MorrowCommits.sol";
 
-contract FletchCommitsTest is Test {
-    FletchCommits internal commits;
+contract MorrowCommitsTest is Test {
+    MorrowCommits internal commits;
     address internal owner = address(this);
     address internal publisher = address(0xBEEF);
     address internal stranger = address(0xCAFE);
 
     function setUp() public {
-        commits = new FletchCommits(publisher);
+        commits = new MorrowCommits(publisher);
     }
 
     // --- helpers mirroring the typescript merkle builder --------------------
@@ -41,26 +41,26 @@ contract FletchCommitsTest is Test {
 
     function test_strangerCannotCommit() public {
         vm.prank(stranger);
-        vm.expectRevert(FletchCommits.NotPublisher.selector);
+        vm.expectRevert(MorrowCommits.NotPublisher.selector);
         commits.commit(bytes32(uint256(1)), 100, 5);
     }
 
     function test_ownerCannotCommitUnlessPublisher() public {
-        vm.expectRevert(FletchCommits.NotPublisher.selector);
+        vm.expectRevert(MorrowCommits.NotPublisher.selector);
         commits.commit(bytes32(uint256(1)), 100, 5);
     }
 
     function test_cannotDoubleCommitCycle() public {
         vm.startPrank(publisher);
         commits.commit(bytes32(uint256(1)), 100, 5);
-        vm.expectRevert(abi.encodeWithSelector(FletchCommits.AlreadyCommitted.selector, uint64(100)));
+        vm.expectRevert(abi.encodeWithSelector(MorrowCommits.AlreadyCommitted.selector, uint64(100)));
         commits.commit(bytes32(uint256(2)), 100, 5);
         vm.stopPrank();
     }
 
     function test_cannotCommitEmptyRoot() public {
         vm.prank(publisher);
-        vm.expectRevert(FletchCommits.EmptyRoot.selector);
+        vm.expectRevert(MorrowCommits.EmptyRoot.selector);
         commits.commit(bytes32(0), 100, 5);
     }
 
@@ -89,13 +89,13 @@ contract FletchCommitsTest is Test {
     function test_onlyPendingOwnerCanAccept() public {
         commits.transferOwnership(address(0xD00D));
         vm.prank(stranger);
-        vm.expectRevert(FletchCommits.NotPendingOwner.selector);
+        vm.expectRevert(MorrowCommits.NotPendingOwner.selector);
         commits.acceptOwnership();
     }
 
     function test_onlyOwnerCanStartTransfer() public {
         vm.prank(stranger);
-        vm.expectRevert(FletchCommits.NotOwner.selector);
+        vm.expectRevert(MorrowCommits.NotOwner.selector);
         commits.transferOwnership(stranger);
     }
 
@@ -105,23 +105,23 @@ contract FletchCommitsTest is Test {
         vm.prank(stranger);
         commits.commit(bytes32(uint256(1)), 100, 1);
         vm.prank(publisher);
-        vm.expectRevert(FletchCommits.NotPublisher.selector);
+        vm.expectRevert(MorrowCommits.NotPublisher.selector);
         commits.commit(bytes32(uint256(2)), 101, 1);
     }
 
     function test_zeroAddressGuards() public {
-        vm.expectRevert(FletchCommits.ZeroAddress.selector);
+        vm.expectRevert(MorrowCommits.ZeroAddress.selector);
         commits.setPublisher(address(0));
-        vm.expectRevert(FletchCommits.ZeroAddress.selector);
+        vm.expectRevert(MorrowCommits.ZeroAddress.selector);
         commits.transferOwnership(address(0));
-        vm.expectRevert(FletchCommits.ZeroAddress.selector);
-        new FletchCommits(address(0));
+        vm.expectRevert(MorrowCommits.ZeroAddress.selector);
+        new MorrowCommits(address(0));
     }
 
     // --- merkle verification ----------------------------------------------------
 
     function test_verifyThreeLeafTree() public {
-        // canonical fletch leaves: tokenId|cycleId|fairValue8dp|confidence|ts
+        // canonical morrow leaves: tokenId|cycleId|fairValue8dp|confidence|ts
         bytes32 a = leaf("1|2950000|249.12345678|87|1770000000");
         bytes32 b = leaf("2|2950000|210.00000000|90|1770000000");
         bytes32 c = leaf("3|2950000|130.55500000|72|1770000000");
@@ -151,7 +151,7 @@ contract FletchCommitsTest is Test {
 
     function test_verifyUnknownCycleReverts() public {
         bytes32[] memory proof = new bytes32[](0);
-        vm.expectRevert(abi.encodeWithSelector(FletchCommits.UnknownCycle.selector, uint64(42)));
+        vm.expectRevert(abi.encodeWithSelector(MorrowCommits.UnknownCycle.selector, uint64(42)));
         commits.verify(bytes32(uint256(1)), proof, 42);
     }
 

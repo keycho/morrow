@@ -3,7 +3,7 @@
 // the pool_discovery_runs dataset and for `discover-pools --json`.
 
 import type { Hex } from "viem";
-import type { PoolProtocol } from "@fletch/config";
+import type { PoolProtocol } from "@morrow/config";
 
 // a quote asset a pool can be priced in. usdg is dollar denominated; weth and
 // native eth need the eth/usd rate to dollarize price and depth.

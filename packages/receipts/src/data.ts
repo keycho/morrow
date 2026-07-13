@@ -3,7 +3,7 @@
 // open print, and the week's on-chain commit totals.
 
 import pg from "pg";
-import { chain, tokens } from "@fletch/config";
+import { chain, tokens } from "@morrow/config";
 import type { ReceiptData, TokenReceipt } from "./types.js";
 
 const { Pool } = pg;

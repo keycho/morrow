@@ -8,7 +8,7 @@
 //   v4: usdg, weth (erc20), and native eth quotes across the standard
 //       fee/tick-spacing combos, at the no-hook pool id
 // each hit is read, priced through the erc-8056 ui multiplier, and depth is
-// measured as ±2% quote depth normalized across venues (see @fletch/engine
+// measured as ±2% quote depth normalized across venues (see @morrow/engine
 // poolmath), then dollarized when the quote is weth/eth and eth/usd is known.
 //
 // this is the read + judge + select logic only; it takes an rpc client and,
@@ -27,7 +27,7 @@ import {
   uniswapV4,
   type PoolProtocol,
   type TokenConfig,
-} from "@fletch/config";
+} from "@morrow/config";
 import {
   decodeUiMultiplier,
   depthFromReserves,
@@ -36,7 +36,7 @@ import {
   spotFromReserves,
   spotFromSqrtPriceX96,
   v4PoolId,
-} from "@fletch/engine";
+} from "@morrow/engine";
 import type { DiscoveredPool, DiscoveryResult, Judged, QuoteDef, Selection } from "./types.js";
 
 const NATIVE = zeroAddress as Hex;

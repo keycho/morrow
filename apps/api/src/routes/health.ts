@@ -4,7 +4,7 @@
 // parse the body; "down" means a core subsystem has gone quiet.
 
 import type { FastifyInstance } from "fastify";
-import { anchors, disclaimer, mockMode, ops, proxySources, timing } from "@fletch/config";
+import { anchors, disclaimer, mockMode, ops, proxySources, timing } from "@morrow/config";
 import {
   lastProxyTickPerSource,
   latestHeartbeats,

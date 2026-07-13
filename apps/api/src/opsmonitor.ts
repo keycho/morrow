@@ -3,8 +3,8 @@
 // from the database) and the api's own 5xx response rate spiking. it pages the
 // same private ops channel, with cooldown and resolved notifications.
 
-import { ops, timing } from "@fletch/config";
-import type { OpsAlerter } from "@fletch/telegram/ops";
+import { ops, timing } from "@morrow/config";
+import type { OpsAlerter } from "@morrow/telegram/ops";
 import { latestHeartbeats, newestFairValueTs } from "./db.js";
 
 // rolling record of recent 5xx response timestamps (ms).

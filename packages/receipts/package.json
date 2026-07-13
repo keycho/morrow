@@ -1,5 +1,5 @@
 {
-  "name": "@fletch/receipts",
+  "name": "@morrow/receipts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fletch/config": "workspace:*",
+    "@morrow/config": "workspace:*",
     "pg": "^8.13.0",
     "tsx": "^4.19.0"
   },

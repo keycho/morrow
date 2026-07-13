@@ -1,7 +1,7 @@
-# @fletch/receipts
+# @morrow/receipts
 
 ```
->>--->  fletch
+>>--->  morrow
 ```
 
 weekly accuracy receipts. generates a markdown summary and a rendered png

@@ -46,7 +46,7 @@ export function makeTelegramTransport(cfg: TelegramTransportConfig): OpsTranspor
   const live = !cfg.dryRun && cfg.botToken !== "" && cfg.chatId !== "";
   return async (event, phase) => {
     const head = phase === "resolved" ? "resolved" : event.severity;
-    const lines = [`fletch ops ${head}`, event.title.toLowerCase(), event.message.toLowerCase()];
+    const lines = [`morrow ops ${head}`, event.title.toLowerCase(), event.message.toLowerCase()];
     const text = lines.join("\n");
     if (!live) {
       // eslint-disable-next-line no-console

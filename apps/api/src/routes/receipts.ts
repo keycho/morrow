@@ -3,7 +3,7 @@
 // via `pnpm receipts`; the api only serves what is stored.
 
 import type { FastifyInstance } from "fastify";
-import { disclaimer } from "@fletch/config";
+import { disclaimer } from "@morrow/config";
 import { getReceipt, getReceiptPng, listReceipts } from "../db.js";
 
 const WEEK_RE = /^\d{4}-\d{2}-\d{2}$/;

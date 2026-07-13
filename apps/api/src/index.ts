@@ -1,4 +1,4 @@
-// fletch api. fastify on railway.
+// morrow api. fastify on railway.
 //
 // endpoints:
 //   GET /v1/tokens
@@ -20,8 +20,8 @@
 import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { api, disclaimer, ops, telegram } from "@fletch/config";
-import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
+import { api, disclaimer, ops, telegram } from "@morrow/config";
+import { OpsAlerter, logTransport, makeTelegramTransport } from "@morrow/telegram/ops";
 import { resolveTier, type Tier } from "./auth.js";
 import { closeDb } from "./db.js";
 import { createX402Middleware, UnwiredVerifier } from "./x402.js";
@@ -35,8 +35,8 @@ import { registerSpreadRoutes } from "./routes/spreads.js";
 import { registerReceiptRoutes } from "./routes/receipts.js";
 
 interface TieredRequest extends FastifyRequest {
-  fletchTier?: Tier;
-  fletchKeyHash?: string | null;
+  morrowTier?: Tier;
+  morrowKeyHash?: string | null;
 }
 
 async function main(): Promise<void> {
@@ -57,8 +57,8 @@ async function main(): Promise<void> {
   app.addHook("onRequest", async (req) => {
     const tiered = req as TieredRequest;
     const { tier, keyHash } = await resolveTier(req);
-    tiered.fletchTier = tier;
-    tiered.fletchKeyHash = keyHash;
+    tiered.morrowTier = tier;
+    tiered.morrowKeyHash = keyHash;
   });
 
   // record 5xx responses for the spike monitor.
@@ -69,11 +69,11 @@ async function main(): Promise<void> {
   await app.register(rateLimit, {
     global: true,
     max: (req) =>
-      (req as TieredRequest).fletchTier === "keyed"
+      (req as TieredRequest).morrowTier === "keyed"
         ? api.rateLimit.keyedPerMinute
         : api.rateLimit.freePerMinute,
     timeWindow: "1 minute",
-    keyGenerator: (req) => (req as TieredRequest).fletchKeyHash ?? req.ip,
+    keyGenerator: (req) => (req as TieredRequest).morrowKeyHash ?? req.ip,
     allowList: (req) => req.url === "/health",
     errorResponseBuilder: (_req, context) => ({
       error: "rate limit exceeded",
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => void shutdown());
 
   await app.listen({ port: api.port, host: api.host });
-  app.log.info(`fletch api listening on ${api.host}:${api.port}`);
+  app.log.info(`morrow api listening on ${api.host}:${api.port}`);
 
   // unhandled worker crash: page the ops channel, then exit non-zero.
   process.on("uncaughtException", (err) => {

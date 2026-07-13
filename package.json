@@ -1,5 +1,5 @@
 {
-  "name": "fletch",
+  "name": "morrow",
   "private": true,
   "version": "0.1.0",
   "description": "off-hours fair value oracle for tokenized equities on robinhood chain",
@@ -8,10 +8,10 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json --noEmit",
     "discover-pools": "tsx scripts/discover-pools.ts",
-    "receipts": "pnpm --filter @fletch/receipts start",
-    "dev:indexer": "pnpm --filter @fletch/indexer dev",
-    "dev:api": "pnpm --filter @fletch/api dev",
-    "dev:web": "pnpm --filter @fletch/web dev"
+    "receipts": "pnpm --filter @morrow/receipts start",
+    "dev:indexer": "pnpm --filter @morrow/indexer dev",
+    "dev:api": "pnpm --filter @morrow/api dev",
+    "dev:web": "pnpm --filter @morrow/web dev"
   },
   "engines": {
     "node": ">=20"
@@ -23,9 +23,9 @@
     ]
   },
   "devDependencies": {
-    "@fletch/config": "workspace:*",
-    "@fletch/discovery": "workspace:*",
-    "@fletch/engine": "workspace:*",
+    "@morrow/config": "workspace:*",
+    "@morrow/discovery": "workspace:*",
+    "@morrow/engine": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.0",
     "pg": "^8.13.0",

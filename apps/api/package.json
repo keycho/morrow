@@ -1,5 +1,5 @@
 {
-  "name": "@fletch/api",
+  "name": "@morrow/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,9 @@
   "dependencies": {
     "@fastify/cors": "^10.0.0",
     "@fastify/rate-limit": "^10.0.0",
-    "@fletch/config": "workspace:*",
-    "@fletch/engine": "workspace:*",
-    "@fletch/telegram": "workspace:*",
+    "@morrow/config": "workspace:*",
+    "@morrow/engine": "workspace:*",
+    "@morrow/telegram": "workspace:*",
     "fastify": "^5.1.0",
     "pg": "^8.13.0",
     "tsx": "^4.19.0",

@@ -1,11 +1,11 @@
 // commit records and merkle proofs. any historical observation can be
 // verified independently: fetch the proof here, recompute the root, compare
-// against FletchCommits.getCommit(cycleId) on robinhood chain.
+// against MorrowCommits.getCommit(cycleId) on robinhood chain.
 
 import type { FastifyInstance } from "fastify";
 import type { Hex } from "viem";
-import { chain, disclaimer, tokenBySymbol } from "@fletch/config";
-import { buildTree, proofForIndex } from "@fletch/engine";
+import { chain, disclaimer, tokenBySymbol } from "@morrow/config";
+import { buildTree, proofForIndex } from "@morrow/engine";
 import { commitByCycle, listCommits } from "../db.js";
 
 export function registerCommitRoutes(app: FastifyInstance): void {
@@ -81,7 +81,7 @@ export function registerCommitRoutes(app: FastifyInstance): void {
           contract: chain.commitsContract,
           chainId: chain.chainId,
           verification:
-            "leaf hash = keccak256(utf8(canonicalString)). fold sorted-pair keccak256 over the proof and compare to FletchCommits.getCommit(cycleId), or call verify(leafHash, proof, cycleId) on the contract.",
+            "leaf hash = keccak256(utf8(canonicalString)). fold sorted-pair keccak256 over the proof and compare to MorrowCommits.getCommit(cycleId), or call verify(leafHash, proof, cycleId) on the contract.",
         },
         disclaimer,
       };

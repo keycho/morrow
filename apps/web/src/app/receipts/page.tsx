@@ -22,7 +22,7 @@ function ReceiptCard({ r }: { r: ReceiptListItem }) {
       {r.hasPng && (
         <img
           src={`${API_URL}/v1/receipts/${r.weekStart}/card.png`}
-          alt={`fletch accuracy receipt for the week of ${r.weekStart}`}
+          alt={`morrow accuracy receipt for the week of ${r.weekStart}`}
           style={{ maxWidth: "100%", border: "1px solid var(--border)", marginBottom: 10 }}
         />
       )}
@@ -64,7 +64,7 @@ export default function ReceiptsPage() {
     <div>
       <h1>weekly accuracy receipts</h1>
       <p className="dim">
-        each week, fletch scores its pre-open fair value against the actual next-open print, per
+        each week, morrow scores its pre-open fair value against the actual next-open print, per
         token, and publishes the mean absolute error, the best call, and the cycles committed
         on-chain. newest first.
       </p>

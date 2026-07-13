@@ -1,4 +1,4 @@
-// reads the public fletch api. the alert worker consumes the same /v1/spreads
+// reads the public morrow api. the alert worker consumes the same /v1/spreads
 // endpoint the dashboard uses; it never touches the database directly.
 
 export interface SpreadRow {

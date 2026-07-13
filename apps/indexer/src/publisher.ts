@@ -1,6 +1,6 @@
 // commit publisher. every cycle, the fair value outputs become canonical
 // merkle leaves; the sorted-pair keccak256 root goes on-chain through
-// FletchCommits.commit, and the full leaf set is persisted so the api can
+// MorrowCommits.commit, and the full leaf set is persisted so the api can
 // serve proofs for any historical observation.
 //
 // the publisher key comes from PUBLISHER_PRIVATE_KEY (env only, never
@@ -19,9 +19,9 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { chain as chainConfig, mockMode, ops } from "@fletch/config";
-import { buildTree, canonicalLeafString, hashLeaf, type LeafInput } from "@fletch/engine";
-import type { OpsAlerter } from "@fletch/telegram/ops";
+import { chain as chainConfig, mockMode, ops } from "@morrow/config";
+import { buildTree, canonicalLeafString, hashLeaf, type LeafInput } from "@morrow/engine";
+import type { OpsAlerter } from "@morrow/telegram/ops";
 import type { CycleOutcome } from "./cycle.js";
 import {
   listUnconfirmedCommits,
@@ -143,7 +143,7 @@ export async function publishCycle(outcome: CycleOutcome, alerter?: OpsAlerter):
     if (!mockMode && !warnedUnconfigured) {
       warnedUnconfigured = true;
       log.warn(
-        "publisher not configured (PUBLISHER_PRIVATE_KEY / FLETCH_COMMITS_ADDRESS / FLETCH_CHAIN_ID); storing commits as pending"
+        "publisher not configured (PUBLISHER_PRIVATE_KEY / MORROW_COMMITS_ADDRESS / MORROW_CHAIN_ID); storing commits as pending"
       );
     }
     await writeHeartbeat("publisher", true, {

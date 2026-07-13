@@ -1,10 +1,10 @@
-# @fletch/telegram
+# @morrow/telegram
 
 ```
->>--->  fletch
+>>--->  morrow
 ```
 
-the public divergence alert bot. a standalone worker that polls the fletch
+the public divergence alert bot. a standalone worker that polls the morrow
 `/v1/spreads` endpoint and posts to a public telegram channel when a tracked
 token's absolute onchain-vs-fair spread crosses a threshold.
 
@@ -21,11 +21,11 @@ token's absolute onchain-vs-fair spread crosses a threshold.
 
 | var | meaning |
 | --- | --- |
-| `FLETCH_API_URL` | fletch api base url to poll |
-| `FLETCH_TG_THRESHOLD_PCT` | absolute spread percent that triggers an alert (default 2) |
-| `FLETCH_TG_COOLDOWN_MS` | minimum ms between alerts per token (default 30m) |
-| `FLETCH_TG_POLL_MS` | poll interval (default 60s) |
-| `FLETCH_PUBLIC_WEB_URL` | dashboard base url for the token link |
+| `MORROW_API_URL` | morrow api base url to poll |
+| `MORROW_TG_THRESHOLD_PCT` | absolute spread percent that triggers an alert (default 2) |
+| `MORROW_TG_COOLDOWN_MS` | minimum ms between alerts per token (default 30m) |
+| `MORROW_TG_POLL_MS` | poll interval (default 60s) |
+| `MORROW_PUBLIC_WEB_URL` | dashboard base url for the token link |
 | `TELEGRAM_PUBLIC_BOT_TOKEN` | bot token. secret. env only |
 | `TELEGRAM_PUBLIC_CHAT_ID` | public channel chat id |
 | `TELEGRAM_DRY_RUN` | log instead of send. defaults true |
@@ -33,7 +33,7 @@ token's absolute onchain-vs-fair spread crosses a threshold.
 ## run
 
 ```
-pnpm --filter @fletch/telegram start
+pnpm --filter @morrow/telegram start
 ```
 
 ## the fine print

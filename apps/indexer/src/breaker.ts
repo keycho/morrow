@@ -2,7 +2,7 @@
 // skipped until the cooldown passes, then a single probe is allowed. one bad
 // source must never take down the worker or starve the others.
 
-import { circuitBreaker } from "@fletch/config";
+import { circuitBreaker } from "@morrow/config";
 
 export type BreakerState = "closed" | "open" | "half_open";
 

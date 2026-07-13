@@ -1,10 +1,10 @@
-# fletch-oracle-mcp
+# morrow-oracle-mcp
 
 ```
->>--->  fletch
+>>--->  morrow
 ```
 
-mcp server for fletch, the off-hours fair value oracle for tokenized
+mcp server for morrow, the off-hours fair value oracle for tokenized
 equities on robinhood chain. read-only data tools plus independent merkle
 verification of any published price against the on-chain commit registry.
 
@@ -22,16 +22,16 @@ verification of any published price against the on-chain commit registry.
 leaf = keccak256 of the canonical string `tokenId|cycleId|fairValue|confidence|timestamp`,
 interior nodes are sorted-pair keccak256. it trusts nothing the api says
 without recomputation, and with an rpc configured it also reads
-`FletchCommits.getCommit(cycleId)` straight from the chain.
+`MorrowCommits.getCommit(cycleId)` straight from the chain.
 
 ## configuration
 
 | env var | required | meaning |
 | --- | --- | --- |
-| `FLETCH_API_URL` | yes | base url of a fletch api deployment |
-| `FLETCH_API_KEY` | no | api key for higher rate limits, sent as `x-api-key` |
-| `FLETCH_RPC_URL` | no | robinhood chain json-rpc url, enables the on-chain check |
-| `FLETCH_COMMITS_ADDRESS` | no | contract override; defaults to the address the proof payload advertises |
+| `MORROW_API_URL` | yes | base url of a morrow api deployment |
+| `MORROW_API_KEY` | no | api key for higher rate limits, sent as `x-api-key` |
+| `MORROW_RPC_URL` | no | robinhood chain json-rpc url, enables the on-chain check |
+| `MORROW_COMMITS_ADDRESS` | no | contract override; defaults to the address the proof payload advertises |
 
 ## claude desktop
 
@@ -40,13 +40,13 @@ add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "fletch": {
+    "morrow": {
       "command": "npx",
-      "args": ["-y", "fletch-oracle-mcp"],
+      "args": ["-y", "morrow-oracle-mcp"],
       "env": {
-        "FLETCH_API_URL": "https://your-fletch-api.example",
-        "FLETCH_RPC_URL": "https://your-robinhood-chain-rpc.example",
-        "FLETCH_API_KEY": "flk_..."
+        "MORROW_API_URL": "https://your-morrow-api.example",
+        "MORROW_RPC_URL": "https://your-robinhood-chain-rpc.example",
+        "MORROW_API_KEY": "flk_..."
       }
     }
   }
@@ -56,7 +56,7 @@ add to `claude_desktop_config.json`:
 ## claude code
 
 ```
-claude mcp add fletch -e FLETCH_API_URL=https://your-fletch-api.example -- npx -y fletch-oracle-mcp
+claude mcp add morrow -e MORROW_API_URL=https://your-morrow-api.example -- npx -y morrow-oracle-mcp
 ```
 
 ## the fine print

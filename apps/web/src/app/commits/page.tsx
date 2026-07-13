@@ -20,7 +20,7 @@ function CommitsInner() {
       <p className="dim">
         every cycle, all fair value observations are hashed into canonical leaves
         (tokenId|cycleId|fairValue|confidence|timestamp), built into a sorted-pair keccak256
-        merkle tree, and the root is committed to FletchCommits on robinhood chain. any
+        merkle tree, and the root is committed to MorrowCommits on robinhood chain. any
         observation can be verified below without trusting this dashboard.
       </p>
 

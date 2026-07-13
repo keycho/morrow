@@ -1,4 +1,4 @@
-// @fletch/discovery public surface. multi-protocol pool discovery (uniswap v2,
+// @morrow/discovery public surface. multi-protocol pool discovery (uniswap v2,
 // v3, v4) shared by the discover-pools cli and the indexer's weekly run.
 
 export {

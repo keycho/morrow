@@ -37,7 +37,7 @@ export default function Home() {
     <div>
       <h1>off-hours fair value feed</h1>
       <p className="dim">
-        when the underlying market is closed, fletch publishes a fair value estimate per tracked
+        when the underlying market is closed, morrow publishes a fair value estimate per tracked
         stock token with a confidence band. every cycle is committed on-chain and verifiable on
         the <Link href="/commits">commits</Link> page.
       </p>

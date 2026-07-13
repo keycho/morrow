@@ -3,7 +3,7 @@
 // client-side proof verification. fetches the proof payload from the api,
 // recomputes the leaf hash and merkle root in the browser with keccak256,
 // and compares against the committed root. the math mirrors
-// FletchCommits.verify: sorted-pair keccak256 fold.
+// MorrowCommits.verify: sorted-pair keccak256 fold.
 
 import { useState } from "react";
 import { concat, keccak256, stringToHex, type Hex } from "viem";

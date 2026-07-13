@@ -8,13 +8,13 @@ importers:
 
   .:
     devDependencies:
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:packages/config
-      '@fletch/discovery':
+      '@morrow/discovery':
         specifier: workspace:*
         version: link:packages/discovery
-      '@fletch/engine':
+      '@morrow/engine':
         specifier: workspace:*
         version: link:packages/engine
       '@types/node':
@@ -44,13 +44,13 @@ importers:
       '@fastify/rate-limit':
         specifier: ^10.0.0
         version: 10.3.0
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@fletch/engine':
+      '@morrow/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@fletch/telegram':
+      '@morrow/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
       fastify:
@@ -78,19 +78,19 @@ importers:
 
   apps/indexer:
     dependencies:
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@fletch/discovery':
+      '@morrow/discovery':
         specifier: workspace:*
         version: link:../../packages/discovery
-      '@fletch/engine':
+      '@morrow/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@fletch/receipts':
+      '@morrow/receipts':
         specifier: workspace:*
         version: link:../../packages/receipts
-      '@fletch/telegram':
+      '@morrow/telegram':
         specifier: workspace:*
         version: link:../../packages/telegram
       pg:
@@ -154,10 +154,10 @@ importers:
 
   packages/discovery:
     dependencies:
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:../config
-      '@fletch/engine':
+      '@morrow/engine':
         specifier: workspace:*
         version: link:../engine
       pg:
@@ -220,7 +220,7 @@ importers:
 
   packages/receipts:
     dependencies:
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:../config
       pg:
@@ -249,7 +249,7 @@ importers:
 
   packages/telegram:
     dependencies:
-      '@fletch/config':
+      '@morrow/config':
         specifier: workspace:*
         version: link:../config
       tsx:

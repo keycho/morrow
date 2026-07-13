@@ -1,4 +1,4 @@
-// fletch configuration. the single source of truth.
+// morrow configuration. the single source of truth.
 //
 // every chain address, rpc url, tracked token, cycle timing value, and tunable
 // model weight lives in this file. nothing is hardcoded anywhere else.
@@ -46,14 +46,14 @@ function envBool(key: string, fallback: boolean): boolean {
 
 export const chain = {
   name: "robinhood chain",
-  chainId: envNum("FLETCH_CHAIN_ID", 4663),
-  // public endpoint is rate limited. for production set FLETCH_RPC_URL to an
+  chainId: envNum("MORROW_CHAIN_ID", 4663),
+  // public endpoint is rate limited. for production set MORROW_RPC_URL to an
   // alchemy or quicknode robinhood chain url. the indexer should not run
   // against the public endpoint.
-  rpcUrl: env("FLETCH_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
-  explorerBaseUrl: env("FLETCH_EXPLORER_URL", "https://robinhoodchain.blockscout.com"),
+  rpcUrl: env("MORROW_RPC_URL", "https://rpc.mainnet.chain.robinhood.com"),
+  explorerBaseUrl: env("MORROW_EXPLORER_URL", "https://robinhoodchain.blockscout.com"),
   // blockscout verifier base for forge contract verification.
-  verifierUrl: env("FLETCH_VERIFIER_URL", "https://robinhoodchain.blockscout.com/api/"),
+  verifierUrl: env("MORROW_VERIFIER_URL", "https://robinhoodchain.blockscout.com/api/"),
   // informational. used to sanity-check block timestamp drift, not for math.
   expectedBlockTimeMs: 100,
   // canonical multicall3, deployed at the same create2 address on every chain
@@ -62,15 +62,15 @@ export const chain = {
   // it. it is not the uniswap interface multicall in `uniswap` below, which
   // has a different, incompatible abi.
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`,
-  // PLACEHOLDER: FletchCommits contract address, known after deploy (see
+  // PLACEHOLDER: MorrowCommits contract address, known after deploy (see
   // SETUP.md). the publisher handles this being unset gracefully.
-  commitsContract: env("FLETCH_COMMITS_ADDRESS", "0xFLETCH_COMMITS_PLACEHOLDER") as `0x${string}`,
+  commitsContract: env("MORROW_COMMITS_ADDRESS", "0xMORROW_COMMITS_PLACEHOLDER") as `0x${string}`,
 } as const;
 
 // ---------------------------------------------------------------------------
 // uniswap v3 on robinhood chain. verified from developers.uniswap.org
 // (robinhood chain deployments). v2, v3, v4, and uniswapx are all live;
-// fletch v1 reads v3 pools.
+// morrow v1 reads v3 pools.
 // ---------------------------------------------------------------------------
 
 export const uniswap = {
@@ -120,7 +120,7 @@ export const uniswapV4 = {
   ] as const,
   // v4 represents native eth as the zero address, not weth.
   nativeCurrency: "0x0000000000000000000000000000000000000000" as `0x${string}`,
-  // fletch only tracks no-hook pools; the hook is the zero address.
+  // morrow only tracks no-hook pools; the hook is the zero address.
   hooks: "0x0000000000000000000000000000000000000000" as `0x${string}`,
 } as const;
 
@@ -154,18 +154,18 @@ export type QuoteSymbol = keyof typeof quoteAssets;
 
 export const timing = {
   // indexer tick: poll pools and proxy sources this often.
-  indexerPollMs: envNum("FLETCH_POLL_MS", 30_000),
+  indexerPollMs: envNum("MORROW_POLL_MS", 30_000),
   // fair value + commit cycle length in seconds. cycle_id = floor(unix / this).
-  cycleSeconds: envNum("FLETCH_CYCLE_SECONDS", 600),
+  cycleSeconds: envNum("MORROW_CYCLE_SECONDS", 600),
   // trailing window for the onchain twap, in seconds.
-  twapWindowSeconds: envNum("FLETCH_TWAP_WINDOW_SECONDS", 3_600),
+  twapWindowSeconds: envNum("MORROW_TWAP_WINDOW_SECONDS", 3_600),
   // heartbeat row is written every indexer tick. /health flags the service
   // degraded when the newest heartbeat is older than this.
   heartbeatStaleMs: 120_000,
 } as const;
 
 // ---------------------------------------------------------------------------
-// tracked tokens. the launch set for fletch.
+// tracked tokens. the launch set for morrow.
 //
 // `address` is the erc-20 stock token (an erc-8056 scaled-ui token). `pool`
 // is the selected uniswap v3 pool and stays null until discovery fills it
@@ -622,16 +622,16 @@ export const proxySources: ProxySourceConfig[] = [
 export const dollarization = {
   // a weth token whose eth/usd tick is older than this is skipped for the
   // tick (no observation stored), degrading confidence.
-  stalenessMs: envNum("FLETCH_ETHUSD_STALENESS_MS", 180_000),
+  stalenessMs: envNum("MORROW_ETHUSD_STALENESS_MS", 180_000),
   ethUsdSource: {
     name: "PROXY_ETHUSD",
     symbol: "ethusd",
-    url: env("FLETCH_ETHUSD_URL", "https://PROXY_SOURCE_URL_ETHUSD"),
-    jsonPath: env("FLETCH_ETHUSD_JSONPATH", "REPLACE.WITH.PATH"),
+    url: env("MORROW_ETHUSD_URL", "https://PROXY_SOURCE_URL_ETHUSD"),
+    jsonPath: env("MORROW_ETHUSD_JSONPATH", "REPLACE.WITH.PATH"),
     weight: 1,
     timeoutMs: 5_000,
     retries: 2,
-    stalenessMs: envNum("FLETCH_ETHUSD_STALENESS_MS", 180_000),
+    stalenessMs: envNum("MORROW_ETHUSD_STALENESS_MS", 180_000),
   } as ProxySourceConfig,
 } as const;
 
@@ -644,10 +644,10 @@ export const discovery = {
   // flag a pool whose per-share price deviates more than this from the anchor
   // reference (when one is available). an implausible pool is never selected
   // silently.
-  plausibilityDeviation: envNum("FLETCH_DISCOVERY_PLAUSIBILITY", 0.25),
+  plausibilityDeviation: envNum("MORROW_DISCOVERY_PLAUSIBILITY", 0.25),
   // a pool with less than this dollar depth is treated as empty and never
   // selected.
-  emptyDepthUsd: envNum("FLETCH_DISCOVERY_EMPTY_DEPTH_USD", 1),
+  emptyDepthUsd: envNum("MORROW_DISCOVERY_EMPTY_DEPTH_USD", 1),
   // prefer a usdg pool when its dollar depth is at least this fraction of the
   // deepest pool found for the token, since fair value is dollar denominated.
   usdgComparableFactor: 0.5,
@@ -656,14 +656,14 @@ export const discovery = {
   // is a low drying-up floor, distinct from the model depth floor that scales
   // the onchain weight; launch pools already sit below the model floor, so
   // alerting on that would be constant noise.
-  depthAlertFloorUsd: envNum("FLETCH_DISCOVERY_DEPTH_ALERT_USD", 500),
-  depthBelowFloorRuns: envNum("FLETCH_DISCOVERY_DEPTH_ALERT_RUNS", 3),
+  depthAlertFloorUsd: envNum("MORROW_DISCOVERY_DEPTH_ALERT_USD", 500),
+  depthBelowFloorRuns: envNum("MORROW_DISCOVERY_DEPTH_ALERT_RUNS", 3),
   // weekly scheduled discovery run in the indexer worker.
   schedule: {
-    autoWeekly: envBool("FLETCH_DISCOVERY_AUTO", true),
+    autoWeekly: envBool("MORROW_DISCOVERY_AUTO", true),
     // day of week in America/New_York (1 = monday) and the hour to run at.
-    weekday: envNum("FLETCH_DISCOVERY_WEEKDAY", 1),
-    hourEt: envNum("FLETCH_DISCOVERY_HOUR_ET", 12),
+    weekday: envNum("MORROW_DISCOVERY_WEEKDAY", 1),
+    hourEt: envNum("MORROW_DISCOVERY_HOUR_ET", 12),
   },
 } as const;
 
@@ -803,17 +803,17 @@ export interface AnchorSourceConfig {
 export const anchors = {
   // master switch for the automated scheduler. off by default; the manual
   // admin endpoints work regardless.
-  automatedSource: envBool("FLETCH_ANCHOR_AUTOMATED", false),
+  automatedSource: envBool("MORROW_ANCHOR_AUTOMATED", false),
   schedule: {
     // insert the close anchor this many minutes after the 16:00 (or 13:00 on
     // half days) et close, and the open print this many minutes after 09:30.
-    closeDelayMinutes: envNum("FLETCH_ANCHOR_CLOSE_DELAY_MIN", 15),
-    openDelayMinutes: envNum("FLETCH_ANCHOR_OPEN_DELAY_MIN", 5),
+    closeDelayMinutes: envNum("MORROW_ANCHOR_CLOSE_DELAY_MIN", 15),
+    openDelayMinutes: envNum("MORROW_ANCHOR_OPEN_DELAY_MIN", 5),
     // if an anchor is still missing this many hours after its target, alert.
-    missedDeadlineHours: envNum("FLETCH_ANCHOR_MISSED_HOURS", 2),
+    missedDeadlineHours: envNum("MORROW_ANCHOR_MISSED_HOURS", 2),
     // grace before an older-than-last-close anchor is treated as stale by the
     // engine, so the normal insertion window does not flap the flag.
-    staleGraceMinutes: envNum("FLETCH_ANCHOR_STALE_GRACE_MIN", 30),
+    staleGraceMinutes: envNum("MORROW_ANCHOR_STALE_GRACE_MIN", 30),
   },
   // reject an automated anchor that deviates more than this from the previous
   // anchor of the same kind, unless the token had a corporate action.
@@ -936,20 +936,20 @@ export const api = {
 // ---------------------------------------------------------------------------
 
 export const ops = {
-  alertCooldownMs: envNum("FLETCH_OPS_COOLDOWN_MS", 1_800_000),
+  alertCooldownMs: envNum("MORROW_OPS_COOLDOWN_MS", 1_800_000),
   // page when the indexer heartbeat is older than this many cycles.
-  heartbeatStaleCycles: envNum("FLETCH_OPS_HEARTBEAT_STALE_CYCLES", 3),
+  heartbeatStaleCycles: envNum("MORROW_OPS_HEARTBEAT_STALE_CYCLES", 3),
   // page after this many consecutive ticks with rpc/pool read failures.
-  rpcFailureTicks: envNum("FLETCH_OPS_RPC_FAILURE_TICKS", 3),
+  rpcFailureTicks: envNum("MORROW_OPS_RPC_FAILURE_TICKS", 3),
   // page when the publisher wallet balance drops below this many eth; the
   // alert estimates gas runway from gasPerCommitEth.
-  publisherBalanceFloorEth: envNum("FLETCH_OPS_PUBLISHER_FLOOR_ETH", 0.01),
-  gasPerCommitEth: envNum("FLETCH_OPS_GAS_PER_COMMIT_ETH", 0.0002),
+  publisherBalanceFloorEth: envNum("MORROW_OPS_PUBLISHER_FLOOR_ETH", 0.01),
+  gasPerCommitEth: envNum("MORROW_OPS_GAS_PER_COMMIT_ETH", 0.0002),
   // api 5xx spike: page when this many 5xx responses occur within the window.
-  api5xxWindowMs: envNum("FLETCH_OPS_5XX_WINDOW_MS", 60_000),
-  api5xxThreshold: envNum("FLETCH_OPS_5XX_THRESHOLD", 5),
+  api5xxWindowMs: envNum("MORROW_OPS_5XX_WINDOW_MS", 60_000),
+  api5xxThreshold: envNum("MORROW_OPS_5XX_THRESHOLD", 5),
   // how often the api ops monitor polls its conditions.
-  monitorIntervalMs: envNum("FLETCH_OPS_MONITOR_INTERVAL_MS", 60_000),
+  monitorIntervalMs: envNum("MORROW_OPS_MONITOR_INTERVAL_MS", 60_000),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -960,8 +960,8 @@ export const ops = {
 
 export const spreads = {
   // amber at or above this absolute spread percent, red at or above bigPct.
-  warnPct: envNum("FLETCH_SPREAD_WARN_PCT", 1),
-  bigPct: envNum("FLETCH_SPREAD_BIG_PCT", 2),
+  warnPct: envNum("MORROW_SPREAD_WARN_PCT", 1),
+  bigPct: envNum("MORROW_SPREAD_BIG_PCT", 2),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -974,17 +974,17 @@ export const spreads = {
 export const telegram = {
   public: {
     // api the alert worker polls for spreads.
-    apiUrl: env("FLETCH_API_URL", "http://localhost:8080"),
-    pollMs: envNum("FLETCH_TG_POLL_MS", 60_000),
+    apiUrl: env("MORROW_API_URL", "http://localhost:8080"),
+    pollMs: envNum("MORROW_TG_POLL_MS", 60_000),
     // absolute spread percent that triggers an alert.
-    alertThresholdPct: envNum("FLETCH_TG_THRESHOLD_PCT", 2),
+    alertThresholdPct: envNum("MORROW_TG_THRESHOLD_PCT", 2),
     // re-arm only after the spread falls below threshold times this fraction,
     // so oscillation around the threshold does not spam.
     rearmFraction: 0.5,
     // minimum time between alerts for the same token.
-    cooldownMs: envNum("FLETCH_TG_COOLDOWN_MS", 1_800_000),
+    cooldownMs: envNum("MORROW_TG_COOLDOWN_MS", 1_800_000),
     // dashboard base url for the token link in the message.
-    webUrl: env("FLETCH_PUBLIC_WEB_URL", ""),
+    webUrl: env("MORROW_PUBLIC_WEB_URL", ""),
     // secrets. env only.
     botToken: env("TELEGRAM_PUBLIC_BOT_TOKEN", ""),
     chatId: env("TELEGRAM_PUBLIC_CHAT_ID", ""),
@@ -1010,12 +1010,12 @@ export const telegram = {
 
 export const receipts = {
   // when true, the indexer generates the weekly receipt on schedule.
-  autoGenerate: envBool("FLETCH_RECEIPTS_AUTO", true),
+  autoGenerate: envBool("MORROW_RECEIPTS_AUTO", true),
   // day of week to generate on, in America/New_York (1 = monday).
-  generateWeekday: envNum("FLETCH_RECEIPTS_WEEKDAY", 1),
+  generateWeekday: envNum("MORROW_RECEIPTS_WEEKDAY", 1),
   // minutes after the 09:30 et open to wait before generating, so the open
   // anchors have landed.
-  generateAfterOpenMinutes: envNum("FLETCH_RECEIPTS_AFTER_OPEN_MIN", 30),
+  generateAfterOpenMinutes: envNum("MORROW_RECEIPTS_AFTER_OPEN_MIN", 30),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -1027,8 +1027,10 @@ export const disclaimer =
   "informational feed. not for use in liquidations, settlement, or as sole pricing source. no warranty.";
 
 export const branding = {
-  name: "fletch",
-  tagline: "off-hours fair value for tokenized equities on robinhood chain",
+  name: "morrow",
+  // morrow means the next morning: every price is implicitly a claim about
+  // tomorrow's open.
+  tagline: "what stocks are worth when the market is closed",
   // ascii arrow mark used in the dashboard and docs.
   mark: ">>--->",
 } as const;
@@ -1077,8 +1079,8 @@ export function quoteAssetFor(token: TokenConfig): (typeof quoteAssets)[QuoteSym
 export function assertConfigReady(): void {
   if (mockMode) return;
   const problems: string[] = [];
-  if (chain.chainId === 0) problems.push("FLETCH_CHAIN_ID is not set");
-  if (chain.rpcUrl.includes("PLACEHOLDER")) problems.push("FLETCH_RPC_URL is not set");
+  if (chain.chainId === 0) problems.push("MORROW_CHAIN_ID is not set");
+  if (chain.rpcUrl.includes("PLACEHOLDER")) problems.push("MORROW_RPC_URL is not set");
   for (const t of tokens) {
     if (t.pool === null) {
       problems.push(`pool for ${t.symbol} is not discovered yet (run pnpm discover-pools)`);

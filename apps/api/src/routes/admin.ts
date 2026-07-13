@@ -3,7 +3,7 @@
 // api keys are minted here. plaintext keys are returned exactly once.
 
 import type { FastifyInstance } from "fastify";
-import { disclaimer, tokenBySymbol } from "@fletch/config";
+import { disclaimer, tokenBySymbol } from "@morrow/config";
 import { generateApiKey, isAdmin } from "../auth.js";
 import { insertAnchor, insertKey } from "../db.js";
 

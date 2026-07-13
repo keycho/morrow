@@ -4,8 +4,8 @@ import { DISCLAIMER, MARK } from "@/lib/constants";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "fletch",
-  description: "off-hours fair value for tokenized equities on robinhood chain",
+  title: "morrow",
+  description: "what stocks are worth when the market is closed",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div className="shell">
           <header className="site-header">
             <Link href="/" className="logo">
-              <span className="mark">{MARK}</span>fletch
+              <span className="mark">{MARK}</span>morrow
             </Link>
             <nav className="nav">
               <Link href="/">feed</Link>
@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="site-footer">
             <div>{DISCLAIMER}</div>
             <div className="faint">
-              {MARK} fletch. every published price is committed as a merkle root on robinhood
+              {MARK} morrow. every published price is committed as a merkle root on robinhood
               chain and independently verifiable.
             </div>
           </footer>

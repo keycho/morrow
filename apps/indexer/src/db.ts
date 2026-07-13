@@ -3,7 +3,7 @@
 // is a small typed helper so the main loop stays readable.
 
 import pg from "pg";
-import { tokens } from "@fletch/config";
+import { tokens } from "@morrow/config";
 import { log } from "./log.js";
 
 const { Pool } = pg;

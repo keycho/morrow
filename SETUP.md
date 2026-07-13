@@ -1,7 +1,7 @@
-# fletch setup
+# morrow setup
 
 ```
->>--->  fletch
+>>--->  morrow
 ```
 
 the ordered checklist for taking this repo from clone to production.
@@ -29,7 +29,7 @@ the contract deploy, anchors, and the two hosting deploys.
 | 3 | discover pools | pool addresses are resolved from the factory, not published |
 | 4 | proxy sources | the 24/7 drift signal, operator-wired |
 | 5 | publisher wallet + funding | signs on-chain commits |
-| 6 | deploy FletchCommits | the commit registry |
+| 6 | deploy MorrowCommits | the commit registry |
 | 7 | anchors | last-close and next-open prints |
 | 8 | railway (indexer + api) | run the services |
 | 9 | vercel (dashboard) | the public site |
@@ -79,7 +79,7 @@ done
 
 ## step 2. rpc provider key
 
-get an alchemy or quicknode robinhood chain endpoint and set `FLETCH_RPC_URL`
+get an alchemy or quicknode robinhood chain endpoint and set `MORROW_RPC_URL`
 in `.env`. the public endpoint (the config default) is rate limited and must
 not be used for the indexer or for discovery.
 
@@ -106,9 +106,9 @@ ready-to-paste config snippet selecting the deepest usable pool per token
 (preferring usdg, since fair value is dollar denominated).
 
 ```
-FLETCH_RPC_URL=<your rpc url> pnpm discover-pools
+MORROW_RPC_URL=<your rpc url> pnpm discover-pools
 # machine-readable (stdout is pure json, logs go to stderr):
-FLETCH_RPC_URL=<your rpc url> pnpm --silent discover-pools --json
+MORROW_RPC_URL=<your rpc url> pnpm --silent discover-pools --json
 ```
 
 the v2 factory, v4 pool manager, and v4 state-view addresses in config were
@@ -125,7 +125,7 @@ to dollarize.
 
 plausibility gate: when `DATABASE_URL` is set, discovery reads the latest close
 anchor per token as a reference and marks any pool whose per-share price
-deviates more than `FLETCH_DISCOVERY_PLAUSIBILITY` (default 25%) from it as
+deviates more than `MORROW_DISCOVERY_PLAUSIBILITY` (default 25%) from it as
 implausible. an implausible pool is shown with the flag but never selected, so
 a tokenized market trading far from the underlying cannot silently become the
 tracked pool.
@@ -169,21 +169,21 @@ anchor source, then moving it into `tokens`.
 weth-quoted pools and dollarization: a weth or native-eth pool prices a stock
 in eth, not dollars. the reader dollarizes it by multiplying price and depth by
 an eth/usd rate (`dollarization.ethUsdSource` in config, fetched alongside the
-proxies and gated by `FLETCH_ETHUSD_STALENESS_MS`). a stale eth/usd rate skips
+proxies and gated by `MORROW_ETHUSD_STALENESS_MS`). a stale eth/usd rate skips
 the token for that tick, which degrades confidence rather than publishing a
 wrong price. to enable a real weth/eth token later: set its `quote` to "weth",
 fill protocol/pool/invert/quoteDecimals from discovery (run with `ETH_USD=<rate>`
-to see dollarized prices and depth), and set `FLETCH_ETHUSD_URL` and
-`FLETCH_ETHUSD_JSONPATH`. none of the current launch tokens need this.
+to see dollarized prices and depth), and set `MORROW_ETHUSD_URL` and
+`MORROW_ETHUSD_JSONPATH`. none of the current launch tokens need this.
 
 keeping discovery current: the indexer runs a discovery pass on a weekly
-schedule (`FLETCH_DISCOVERY_AUTO`, default on; `FLETCH_DISCOVERY_WEEKDAY` /
-`FLETCH_DISCOVERY_HOUR_ET`) and records every run — cli or worker — in the
+schedule (`MORROW_DISCOVERY_AUTO`, default on; `MORROW_DISCOVERY_WEEKDAY` /
+`MORROW_DISCOVERY_HOUR_ET`) and records every run — cli or worker — in the
 `pool_discovery_runs` table, so pool liquidity arriving over time becomes a
 queryable dataset. the worker never edits config; it raises an ops alert when
 a usable pool appears for a token that is currently null, or when a configured
-pool's dollar depth stays below `FLETCH_DISCOVERY_DEPTH_ALERT_USD` (default
-$500) for `FLETCH_DISCOVERY_DEPTH_ALERT_RUNS` (default 3) consecutive runs. you
+pool's dollar depth stays below `MORROW_DISCOVERY_DEPTH_ALERT_USD` (default
+$500) for `MORROW_DISCOVERY_DEPTH_ALERT_RUNS` (default 3) consecutive runs. you
 review the alert and update config by hand.
 
 re-run discovery against your own production rpc before launch; pools and
@@ -216,17 +216,17 @@ close.
 | 5.3 | `DEPLOYER_PRIVATE_KEY` | can be the same wallet for v1. secret |
 | 5.4 | fund it | send a little eth on robinhood chain (canonical arbitrum bridge) for gas. one commit per 600s cycle is cheap |
 
-## step 6. deploy FletchCommits
+## step 6. deploy MorrowCommits
 
 ```
 cd packages/contracts
 forge install foundry-rs/forge-std   # first time only, creates lib/
 forge build
 forge test -vv                        # all tests must pass
-forge script script/Deploy.s.sol --rpc-url "$FLETCH_RPC_URL" --broadcast
+forge script script/Deploy.s.sol --rpc-url "$MORROW_RPC_URL" --broadcast
 ```
 
-set `FLETCH_COMMITS_ADDRESS` in `.env` to the address the script prints.
+set `MORROW_COMMITS_ADDRESS` in `.env` to the address the script prints.
 optional verification target: `https://robinhoodchain.blockscout.com/api/`.
 
 ## step 7. anchors (close and open prices)
@@ -236,7 +236,7 @@ feeds accuracy. two ways to maintain them:
 
 automated (recommended): fill `anchors.sources` in config.ts with a close url,
 open url (`{symbol}` is substituted), and json path per token, then set
-`FLETCH_ANCHOR_AUTOMATED=true`. the indexer inserts the close 15m after the
+`MORROW_ANCHOR_AUTOMATED=true`. the indexer inserts the close 15m after the
 16:00 et close (13:00 on half days) and the open 5m after 09:30, validates
 each against the previous anchor (a jump over 15% is rejected unless a
 corporate action explains it), and pages the ops channel on a rejection or a
@@ -266,27 +266,27 @@ that happens.
 
 8.1 indexer (worker, no public port)
 - build: `pnpm install --frozen-lockfile`
-- start: `pnpm --filter @fletch/indexer start`
-- env: `FLETCH_RPC_URL`, `FLETCH_COMMITS_ADDRESS`, `DATABASE_URL`,
+- start: `pnpm --filter @morrow/indexer start`
+- env: `MORROW_RPC_URL`, `MORROW_COMMITS_ADDRESS`, `DATABASE_URL`,
   `PUBLISHER_PRIVATE_KEY`, `TELEGRAM_OPS_BOT_TOKEN`, `TELEGRAM_OPS_CHAT_ID`
-  (leave `TELEGRAM_OPS_DRY_RUN=true` until ready), `FLETCH_ANCHOR_AUTOMATED`,
-  optionally `FLETCH_POLL_MS`, `FLETCH_CYCLE_SECONDS`,
-  `FLETCH_TWAP_WINDOW_SECONDS`. the indexer also generates the weekly receipt
+  (leave `TELEGRAM_OPS_DRY_RUN=true` until ready), `MORROW_ANCHOR_AUTOMATED`,
+  optionally `MORROW_POLL_MS`, `MORROW_CYCLE_SECONDS`,
+  `MORROW_TWAP_WINDOW_SECONDS`. the indexer also generates the weekly receipt
   and pages the ops channel.
 
 8.2 api (public)
 - build: `pnpm install --frozen-lockfile`
-- start: `pnpm --filter @fletch/api start`
+- start: `pnpm --filter @morrow/api start`
 - env: `DATABASE_URL`, `ADMIN_TOKEN`, `API_PORT` (or let it read railway's
   injected `PORT`), `API_CORS_ORIGIN` (your vercel domain),
-  `FLETCH_COMMITS_ADDRESS`, `FLETCH_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`,
+  `MORROW_COMMITS_ADDRESS`, `MORROW_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`,
   `TELEGRAM_OPS_CHAT_ID`, `X402_ENABLED` when ready
 
 8.3 public alert bot (worker, no public port, optional)
-- start: `pnpm --filter @fletch/telegram start`
-- env: `FLETCH_API_URL` (the api url), `FLETCH_PUBLIC_WEB_URL` (the vercel
+- start: `pnpm --filter @morrow/telegram start`
+- env: `MORROW_API_URL` (the api url), `MORROW_PUBLIC_WEB_URL` (the vercel
   domain), `TELEGRAM_PUBLIC_BOT_TOKEN`, `TELEGRAM_PUBLIC_CHAT_ID`,
-  `TELEGRAM_DRY_RUN=false` to go live, optionally `FLETCH_TG_THRESHOLD_PCT`.
+  `TELEGRAM_DRY_RUN=false` to go live, optionally `MORROW_TG_THRESHOLD_PCT`.
   dry-run (default) logs the messages so you can watch before wiring the token.
 
 ## step 9. deploy the dashboard to vercel
@@ -304,7 +304,7 @@ pnpm build
 npm publish --access public
 ```
 
-users configure it with their `FLETCH_API_URL` (and `FLETCH_RPC_URL` for the
+users configure it with their `MORROW_API_URL` (and `MORROW_RPC_URL` for the
 on-chain check). see `packages/mcp/README.md` for the claude desktop snippet.
 
 ## weekly receipts
@@ -326,14 +326,14 @@ the cards yourself from the `/receipts` page or `GET /v1/receipts`.
 ## weekly discovery
 
 the indexer runs a multi-protocol discovery pass weekly (default monday at noon
-et, `FLETCH_DISCOVERY_*`) and records every run in `pool_discovery_runs`. it
+et, `MORROW_DISCOVERY_*`) and records every run in `pool_discovery_runs`. it
 does not edit config; it alerts when a usable pool appears for a null token or a
 configured pool's depth stays below the floor for several runs (see the runbook
 below). to run one by hand and inspect the dataset:
 
 ```
-FLETCH_RPC_URL=... DATABASE_URL=... pnpm discover-pools          # table + snippet
-FLETCH_RPC_URL=... DATABASE_URL=... pnpm --silent discover-pools --json > run.json
+MORROW_RPC_URL=... DATABASE_URL=... pnpm discover-pools          # table + snippet
+MORROW_RPC_URL=... DATABASE_URL=... pnpm --silent discover-pools --json > run.json
 ```
 
 both the cli and the worker append to the same table, so the history of which
@@ -360,9 +360,9 @@ to check:
 | alert | what it means | first thing to check |
 | --- | --- | --- |
 | indexer heartbeat stale | no indexer heartbeat for over 3 cycles | is the indexer worker running on railway; check its logs and the db connection |
-| rpc failures | several consecutive ticks read no pools | is `FLETCH_RPC_URL` (alchemy/quicknode) up and not rate limited; check the provider dashboard |
+| rpc failures | several consecutive ticks read no pools | is `MORROW_RPC_URL` (alchemy/quicknode) up and not rate limited; check the provider dashboard |
 | publisher wallet low | gas balance below the floor, with a runway estimate | top up the publisher wallet with eth over the canonical bridge |
-| commit publish failed / tx reverted | a cycle commit did not confirm | check gas, the rpc, and `FLETCH_COMMITS_ADDRESS`; the reconcile pass retries automatically |
+| commit publish failed / tx reverted | a cycle commit did not confirm | check gas, the rpc, and `MORROW_COMMITS_ADDRESS`; the reconcile pass retries automatically |
 | anchor rejected | an automated anchor jumped over the threshold with no corporate action | verify the print at the source; if it is a real split, the flag clears once a corporate_action cycle records; otherwise insert the correct anchor manually |
 | anchor missed deadline | an anchor is still missing hours after its target | check the anchor source url and json path; insert manually to unblock, the engine is running stale-anchor meanwhile |
 | api 5xx spike | the api returned many 5xx in the window | check the api logs and the db; likely a query or connection issue |
@@ -378,7 +378,7 @@ to check:
 - `GET $API_URL/v1/commits` shows `confirmed` rows with tx hashes; open one
   on the explorer
 - on the commits page, verify an observation in the browser; then run the
-  mcp `verify_observation` tool with `FLETCH_RPC_URL` set so the root is
+  mcp `verify_observation` tool with `MORROW_RPC_URL` set so the root is
   checked against the chain itself
 - after the first market open, insert the `open` anchors and check
   `GET $API_URL/v1/accuracy/tsla`
@@ -392,9 +392,9 @@ to check:
 ## positioning
 
 chainlink is robinhood chain's official oracle and feeds stock token prices.
-fletch does not compete with that feed. fletch's product is the off-hours
+morrow does not compete with that feed. morrow's product is the off-hours
 fair value blend and the verifiable commit trail, a different object. the
-docs page says this explicitly so nobody frames fletch as a chainlink
+docs page says this explicitly so nobody frames morrow as a chainlink
 replacement.
 
 ## remaining placeholder index (grep targets)
@@ -407,10 +407,10 @@ REPLACE.WITH.PATH                      config.ts (step 4)
 token pool: null                       config.ts (step 3, discovery fills)
 X402_NETWORK_PLACEHOLDER, X402_PAY_TO  config.ts (only for x402)
 ANCHOR_SOURCE_URL_PLACEHOLDER          config.ts (future automation)
-FLETCH_COMMITS_ADDRESS                 .env (after step 6)
+MORROW_COMMITS_ADDRESS                 .env (after step 6)
 DATABASE_URL, PUBLISHER_PRIVATE_KEY,
   DEPLOYER_PRIVATE_KEY, ADMIN_TOKEN    .env (secrets)
-FLETCH_RPC_URL                         .env (step 2, provider key)
+MORROW_RPC_URL                         .env (step 2, provider key)
 NEXT_PUBLIC_API_URL                    vercel env
 ```
 

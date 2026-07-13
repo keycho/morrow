@@ -1,5 +1,5 @@
 // anchor scheduler. the imperative shell around the pure scheduling and
-// validation helpers in @fletch/engine.
+// validation helpers in @morrow/engine.
 //
 // once per session, a configurable delay after the official close and open,
 // it fetches the anchor price per token and inserts it, skipping weekends and
@@ -18,7 +18,7 @@ import {
   type AnchorSourceConfig,
   type ProxySourceConfig,
   type TokenConfig,
-} from "@fletch/config";
+} from "@morrow/config";
 import {
   anchorDue,
   anchorMissed,
@@ -27,7 +27,7 @@ import {
   validateAnchor,
   type AnchorKind,
   type CalendarConfig,
-} from "@fletch/engine";
+} from "@morrow/engine";
 import {
   anchorExistsAt,
   hadRecentCorporateAction,
@@ -36,7 +36,7 @@ import {
 } from "./db.js";
 import { fetchProxy } from "./proxies.js";
 import { mockBasePrices } from "./mock.js";
-import type { OpsAlerter } from "@fletch/telegram/ops";
+import type { OpsAlerter } from "@morrow/telegram/ops";
 import { log } from "./log.js";
 
 const calendarConfig: CalendarConfig = {

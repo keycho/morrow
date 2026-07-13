@@ -8,7 +8,7 @@
 // exists here.
 
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { api, disclaimer } from "@fletch/config";
+import { api, disclaimer } from "@morrow/config";
 
 export interface PaymentRequirements {
   scheme: string;
@@ -44,7 +44,7 @@ export function requirementsFor(resource: string): PaymentRequirements {
     payTo: api.x402.payTo,
     maxAmountRequiredUsd: api.x402.priceUsdPerQuery,
     resource,
-    description: "fletch fair value query",
+    description: "morrow fair value query",
   };
 }
 
@@ -53,7 +53,7 @@ export function createX402Middleware(verifier: PaymentVerifier) {
     if (!api.x402.enabled) return;
 
     // keyed callers pass through; x402 is for anonymous agent traffic
-    const tier = (req as FastifyRequest & { fletchTier?: string }).fletchTier;
+    const tier = (req as FastifyRequest & { morrowTier?: string }).morrowTier;
     if (tier === "keyed") return;
 
     const requirements = requirementsFor(req.url);

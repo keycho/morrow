@@ -2,7 +2,7 @@
 // official open print, rolling. this endpoint is the marketing.
 
 import type { FastifyInstance } from "fastify";
-import { disclaimer, tokenBySymbol } from "@fletch/config";
+import { disclaimer, tokenBySymbol } from "@morrow/config";
 import { accuracySamples } from "../db.js";
 
 function percentile(sortedAbs: number[], p: number): number {

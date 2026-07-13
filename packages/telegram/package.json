@@ -1,5 +1,5 @@
 {
-  "name": "@fletch/telegram",
+  "name": "@morrow/telegram",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fletch/config": "workspace:*",
+    "@morrow/config": "workspace:*",
     "tsx": "^4.19.0"
   },
   "devDependencies": {

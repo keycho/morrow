@@ -1,4 +1,4 @@
-// @fletch/engine public surface. pure fair value math, the market calendar,
+// @morrow/engine public surface. pure fair value math, the market calendar,
 // cycle arithmetic, erc-8056 scaled-ui helpers, and the merkle commitment
 // scheme. no i/o anywhere.
 

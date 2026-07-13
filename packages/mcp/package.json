@@ -1,11 +1,11 @@
 {
-  "name": "fletch-oracle-mcp",
+  "name": "morrow-oracle-mcp",
   "version": "0.1.0",
-  "description": "mcp server for fletch, the off-hours fair value oracle for tokenized equities on robinhood chain. read-only data tools plus independent merkle verification.",
+  "description": "mcp server for morrow, the off-hours fair value oracle for tokenized equities on robinhood chain. read-only data tools plus independent merkle verification.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "fletch-oracle-mcp": "dist/index.js"
+    "morrow-oracle-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [

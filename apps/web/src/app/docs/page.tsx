@@ -6,13 +6,13 @@ import { DISCLAIMER, MARK } from "@/lib/constants";
 export default function DocsPage() {
   return (
     <div>
-      <h1>what fletch is</h1>
+      <h1>what morrow is</h1>
       <p className="dim">
         tokenized equities on robinhood chain trade around the clock, but their underlying
-        stocks only price during nyse and nasdaq hours. fletch publishes a fair value estimate
+        stocks only price during nyse and nasdaq hours. morrow publishes a fair value estimate
         per tracked stock token while the underlying market is closed, with a confidence band,
         and commits a merkle root of every observation on robinhood chain so each published
-        price is later verifiable. a fletcher makes arrows. {MARK}
+        price is later verifiable. a morrower makes arrows. {MARK}
       </p>
 
       <h2>methodology, short version</h2>
@@ -72,7 +72,7 @@ export default function DocsPage() {
       <p className="dim">
         each cycle, every observation becomes a canonical leaf:
         tokenId|cycleId|fairValue|confidence|timestamp, hashed with keccak256. leaves build a
-        sorted-pair merkle tree; the root is committed to the FletchCommits contract. fetch a
+        sorted-pair merkle tree; the root is committed to the MorrowCommits contract. fetch a
         proof from /v1/proof, recompute the root yourself, and compare against
         getCommit(cycleId) on-chain. the commits page runs this check in your browser; the mcp
         tool verify_observation also checks the chain over rpc.
@@ -81,7 +81,7 @@ export default function DocsPage() {
       <h2>spreads and alerts</h2>
       <p className="dim">
         the <a href="/spreads">mispricings board</a> ranks tokens by the absolute spread between
-        the onchain pool price (multiplier-adjusted and dollarized) and fletch fair value,
+        the onchain pool price (multiplier-adjusted and dollarized) and morrow fair value,
         refreshed live. a public telegram channel posts when a token&apos;s absolute spread crosses
         a threshold, with hysteresis and a per-token cooldown so it does not spam on oscillation.
         messages are data statements only, with an &quot;informational feed, not trading advice&quot;
@@ -89,17 +89,17 @@ export default function DocsPage() {
         channel.
       </p>
 
-      <h2>chainlink, and what fletch is not</h2>
+      <h2>chainlink, and what morrow is not</h2>
       <p className="dim">
-        chainlink is robinhood chain&apos;s official oracle and feeds stock token prices. fletch
-        does not compete with that feed. fletch&apos;s product is the off-hours fair value blend
-        and the verifiable commit trail, a different object. do not frame fletch as a chainlink
+        chainlink is robinhood chain&apos;s official oracle and feeds stock token prices. morrow
+        does not compete with that feed. morrow&apos;s product is the off-hours fair value blend
+        and the verifiable commit trail, a different object. do not frame morrow as a chainlink
         replacement.
       </p>
 
       <h2>accuracy receipts</h2>
       <p className="dim">
-        each week fletch scores its pre-open fair value against the actual next-open print, per
+        each week morrow scores its pre-open fair value against the actual next-open print, per
         token, and publishes a card with the mean absolute error, the best call, and the cycles
         committed on-chain. the <a href="/receipts">receipts</a> page lists them, newest first;
         the api serves the markdown and a rendered png. receipts are generated only, never
@@ -165,17 +165,17 @@ export default function DocsPage() {
 
       <h2>mcp install</h2>
       <p className="dim">
-        the fletch-oracle-mcp package gives agents read access plus independent verification.
+        the morrow-oracle-mcp package gives agents read access plus independent verification.
         claude desktop config:
       </p>
       <pre className="block">{`{
   "mcpServers": {
-    "fletch": {
+    "morrow": {
       "command": "npx",
-      "args": ["-y", "fletch-oracle-mcp"],
+      "args": ["-y", "morrow-oracle-mcp"],
       "env": {
-        "FLETCH_API_URL": "https://your-fletch-api.example",
-        "FLETCH_RPC_URL": "https://your-robinhood-chain-rpc.example"
+        "MORROW_API_URL": "https://your-morrow-api.example",
+        "MORROW_RPC_URL": "https://your-robinhood-chain-rpc.example"
       }
     }
   }

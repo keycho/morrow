@@ -72,7 +72,7 @@ describe("svg rendering", () => {
     const svg = buildSvg(sample);
     expect(svg.startsWith("<svg")).toBe(true);
     expect(svg.trimEnd().endsWith("</svg>")).toBe(true);
-    expect(svg).toContain("fletch");
+    expect(svg).toContain("morrow");
     expect(svg).toContain("&gt;&gt;---&gt;"); // escaped arrow mark
     expect(svg).toContain("tsla");
     expect(svg).toContain("cycles committed on-chain: 812");

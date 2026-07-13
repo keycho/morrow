@@ -3,7 +3,7 @@
 // with exponential backoff, staleness flags, and a circuit breaker. one bad
 // source never blocks the others.
 
-import { activeFetchSources, type ProxySourceConfig } from "@fletch/config";
+import { activeFetchSources, type ProxySourceConfig } from "@morrow/config";
 import { CircuitBreaker, backoffDelayMs, sleep } from "./breaker.js";
 import { log } from "./log.js";
 
@@ -48,7 +48,7 @@ async function fetchOnce(source: ProxySourceConfig): Promise<number> {
   try {
     const res = await fetch(source.url, {
       signal: controller.signal,
-      headers: { accept: "application/json", "user-agent": "fletch-indexer/0.1" },
+      headers: { accept: "application/json", "user-agent": "morrow-indexer/0.1" },
     });
     if (!res.ok) throw new Error(`http ${res.status}`);
     const body: unknown = await res.json();

@@ -1,4 +1,4 @@
-// fletch public divergence alert bot. its own worker.
+// morrow public divergence alert bot. its own worker.
 //
 // polls the public /v1/spreads endpoint and posts to a public telegram
 // channel when a token's absolute spread crosses the configured threshold,
@@ -7,7 +7,7 @@
 // with a single disclaimer footer. dry_run (on by default) logs instead of
 // sending.
 
-import { telegram } from "@fletch/config";
+import { telegram } from "@morrow/config";
 import { evaluate, initialState, type AlertState } from "./alertlogic.js";
 import { fetchSpreads } from "./client.js";
 import { formatAlert } from "./format.js";

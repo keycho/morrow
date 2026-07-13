@@ -1,5 +1,5 @@
 {
-  "name": "@fletch/discovery",
+  "name": "@morrow/discovery",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@fletch/config": "workspace:*",
-    "@fletch/engine": "workspace:*",
+    "@morrow/config": "workspace:*",
+    "@morrow/engine": "workspace:*",
     "pg": "^8.13.0",
     "viem": "^2.21.0"
   },

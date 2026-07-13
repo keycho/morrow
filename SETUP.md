@@ -100,13 +100,26 @@ values into the matching entries in `tokens` in `packages/config/config.ts`.
 the script excludes any token with no pool from the launch set and flags any
 weth-only token as needing an eth/usd proxy to dollarize (not wired in v1).
 
-note on liquidity: tokenized float is extremely thin at launch. expect the
-depth floor to hold the onchain weight near zero, so fair value will be
-mostly anchor plus proxy drift. that is correct behavior, surfaced honestly
-through the confidence score, not a bug.
+what a discovery run found (block ~8.7m, july 2026), already reflected in
+config:
 
-`assertConfigReady()` refuses to boot live mode while any launch token's pool
-is still null, so a missed paste fails loudly at startup.
+- tsla: usdg pool 0xf4ACdAEE.., fee 3000, filled. thin (near-zero depth).
+- nvda: usdg pool 0xB944cec3.., fee 3000, invert true, filled. has depth.
+- aapl: only a weth pool (0x8bb3514e..). left null; needs eth/usd
+  dollarization, not wired in v1.
+- msft, amzn: no v3 pool on usdg or weth. left null, excluded.
+
+re-run discovery against your own production rpc before launch; pools and
+liquidity evolve. then either fill the remaining tokens or remove them from
+the `tokens` array. `assertConfigReady()` refuses to boot live mode while any
+listed token's pool is still null, so a missing pool fails loudly at startup
+rather than publishing nothing for that token.
+
+note on liquidity: tokenized float is extremely thin at launch (the tsla pool
+had zero active liquidity at discovery). expect the depth floor to hold the
+onchain weight near zero, so fair value will be mostly anchor plus proxy
+drift. that is correct behavior, surfaced honestly through the confidence
+score, not a bug.
 
 ## step 4. proxy signal sources (config.ts)
 

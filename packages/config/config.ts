@@ -56,6 +56,12 @@ export const chain = {
   verifierUrl: env("FLETCH_VERIFIER_URL", "https://robinhoodchain.blockscout.com/api/"),
   // informational. used to sanity-check block timestamp drift, not for math.
   expectedBlockTimeMs: 100,
+  // canonical multicall3, deployed at the same create2 address on every chain
+  // and verified present on robinhood chain. this is what viem's
+  // client.multicall speaks (aggregate3); the reader and pool discovery use
+  // it. it is not the uniswap interface multicall in `uniswap` below, which
+  // has a different, incompatible abi.
+  multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11" as `0x${string}`,
   // PLACEHOLDER: FletchCommits contract address, known after deploy (see
   // SETUP.md). the publisher handles this being unset gracefully.
   commitsContract: env("FLETCH_COMMITS_ADDRESS", "0xFLETCH_COMMITS_PLACEHOLDER") as `0x${string}`,
@@ -71,6 +77,9 @@ export const uniswap = {
   factory: "0x1f7d7550b1b028f7571e69a784071f0205fd2efa" as `0x${string}`,
   quoterV2: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7" as `0x${string}`,
   tickLens: "0x7dfd4f31be6814d2906bde155c3e1b146eac1468" as `0x${string}`,
+  // the uniswap interface multicall (UniswapInterfaceMulticall). kept for
+  // reference. note: this is not multicall3; viem's client.multicall reverts
+  // against it, so the reader and discovery use chain.multicall3 instead.
   multicall: "0x282a3c4d320cc7f0d5eaf56b8029e4b88338f0a3" as `0x${string}`,
   swapRouter02: "0xcaf681a66d020601342297493863e78c959e5cb2" as `0x${string}`,
   universalRouter: "0x8876789976decbfcbbbe364623c63652db8c0904" as `0x${string}`,
@@ -151,6 +160,11 @@ export interface TokenConfig {
   proxies: string[];
 }
 
+// pool, invert, and quoteDecimals below come from a discovery run against
+// robinhood chain mainnet (scripts/discover-pools.ts). tsla and nvda have
+// usdg pools and are filled. aapl, msft, and amzn are left null with the
+// reason: re-run discovery against a production rpc before launch to confirm
+// current selection and liquidity, since pools and depth evolve.
 export const tokens: TokenConfig[] = [
   {
     id: 1,
@@ -158,13 +172,18 @@ export const tokens: TokenConfig[] = [
     name: "tesla",
     address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
     quote: "usdg",
-    pool: null,
+    pool: "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
     proxies: ["PROXY_TSLA_A"],
   },
   {
+    // no usdg pool as of discovery. a weth pool exists
+    // (0x8bb3514e2204E1cDF3Ac149EFEe7Ff04D91B719f) but a weth quote needs an
+    // eth/usd proxy to dollarize before the engine can track it, which is not
+    // wired in v1. left null until a usdg pool appears or dollarization is
+    // added. remove aapl from the launch set to boot live without it.
     id: 2,
     symbol: "aapl",
     name: "apple",
@@ -182,13 +201,16 @@ export const tokens: TokenConfig[] = [
     name: "nvidia",
     address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
     quote: "usdg",
-    pool: null,
-    invert: false,
+    pool: "0xB944cec30Bd4175855215D767ADC81F39e5f7E2B",
+    invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
     proxies: ["PROXY_NVDA_A"],
   },
   {
+    // no uniswap v3 pool found on usdg or weth as of discovery. left null and
+    // excluded from the live launch set until a pool exists. remove msft from
+    // the launch set, or re-run discovery, before booting live.
     id: 4,
     symbol: "msft",
     name: "microsoft",
@@ -201,6 +223,9 @@ export const tokens: TokenConfig[] = [
     proxies: ["PROXY_MSFT_A"],
   },
   {
+    // no uniswap v3 pool found on usdg or weth as of discovery. left null and
+    // excluded from the live launch set until a pool exists. remove amzn from
+    // the launch set, or re-run discovery, before booting live.
     id: 5,
     symbol: "amzn",
     name: "amazon",

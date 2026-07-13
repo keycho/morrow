@@ -22,7 +22,7 @@
 // such tokens and they are excluded from the usdg launch set.
 
 import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
-import { chain, tokens, uniswap, type TokenConfig } from "@fletch/config";
+import { chain, tokens, type TokenConfig } from "@fletch/config";
 import { decodeUiMultiplier, effectivePerSharePrice } from "@fletch/engine";
 import { log } from "./log.js";
 import { backoffDelayMs, sleep } from "./breaker.js";
@@ -148,7 +148,7 @@ export async function readPool(t: TokenConfig): Promise<PoolReading> {
       // slot0, liquidity, and the erc-8056 ui multiplier in one multicall.
       // allowFailure lets a token without uiMultiplier() degrade to m = 1.
       const [slot0Res, liquidityRes, multiplierRes] = await c.multicall({
-        multicallAddress: uniswap.multicall,
+        multicallAddress: chain.multicall3,
         allowFailure: true,
         contracts: [
           { address: pool, abi: poolAbi, functionName: "slot0" },

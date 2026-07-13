@@ -6,7 +6,8 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json --noEmit",
+    "discover-pools": "tsx scripts/discover-pools.ts",
     "dev:indexer": "pnpm --filter @fletch/indexer dev",
     "dev:api": "pnpm --filter @fletch/api dev",
     "dev:web": "pnpm --filter @fletch/web dev"
@@ -19,5 +20,13 @@
     "onlyBuiltDependencies": [
       "esbuild"
     ]
+  },
+  "devDependencies": {
+    "@fletch/config": "workspace:*",
+    "@fletch/engine": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "viem": "^2.21.0"
   }
 }

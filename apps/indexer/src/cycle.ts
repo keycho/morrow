@@ -5,7 +5,7 @@
 // everything tunable comes from @fletch/config; all math lives in
 // @fletch/engine as pure functions.
 
-import { calendar, mockMode, model, timing, tokens, proxiesForToken } from "@fletch/config";
+import { anchors, calendar, mockMode, model, timing, tokens, proxiesForToken } from "@fletch/config";
 import {
   computeFairValue,
   cycleIdFor,
@@ -56,6 +56,17 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
       const observations = await recentObservations(token.id, timing.twapWindowSeconds);
       const anchor = await latestAnchor(token.id, "close");
 
+      // stale anchor: an expected close print was missed. only flag once the
+      // insertion window (close delay plus grace) has elapsed, so the normal
+      // gap between close and insert does not flap the flag.
+      const closeTargetMs = closeTime.getTime();
+      const windowMs =
+        (anchors.schedule.closeDelayMinutes + anchors.schedule.staleGraceMinutes) * 60_000;
+      const anchorStale =
+        anchor !== null &&
+        anchor.marketTs.getTime() < closeTargetMs &&
+        nowMs - closeTargetMs > windowMs;
+
       const proxies: ProxyInput[] = [];
       for (const source of proxiesForToken(token.symbol)) {
         const current = await latestProxyTick(source.name);
@@ -75,6 +86,7 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
           nowMs,
           regime,
           anchorPrice: anchor ? anchor.price : null,
+          anchorStale,
           observations: observations.map((o) => ({
             tsMs: o.ts.getTime(),
             spot: o.poolSpot,
@@ -102,6 +114,7 @@ export async function maybeRunCycle(nowMs: number): Promise<CycleOutcome | null>
         regime: outcome.regime,
         suspect: outcome.suspect,
         corporateAction: outcome.corporateAction,
+        anchorStale: outcome.anchorStale,
         anchorPrice: anchor ? anchor.price : null,
         drift: outcome.components.drift,
         onchainTwap: outcome.components.twapRaw,

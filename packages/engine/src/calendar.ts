@@ -272,6 +272,23 @@ export function lastCloseTime(utc: Date, cfg: CalendarConfig = defaultCalendarCo
   throw new Error("no trading day found in the last 15 days; calendar is broken");
 }
 
+// most recent official open instant at or before `utc`.
+export function lastOpenTime(utc: Date, cfg: CalendarConfig = defaultCalendarConfig): Date {
+  const w = wallTimeAt(utc, cfg.timezone);
+  let cursor = new Date(Date.UTC(w.year, w.month - 1, w.day));
+  for (let i = 0; i < 15; i++) {
+    const y = cursor.getUTCFullYear();
+    const m = cursor.getUTCMonth() + 1;
+    const d = cursor.getUTCDate();
+    if (isTradingDay(y, m, d, cfg)) {
+      const open = wallTimeToUtc(y, m, d, 9, 30, cfg.timezone);
+      if (open.getTime() <= utc.getTime()) return open;
+    }
+    cursor = new Date(cursor.getTime() - 24 * 3600 * 1000);
+  }
+  throw new Error("no trading day found in the last 15 days; calendar is broken");
+}
+
 // next official open instant strictly after `utc`.
 export function nextOpenTime(utc: Date, cfg: CalendarConfig = defaultCalendarConfig): Date {
   const w = wallTimeAt(utc, cfg.timezone);

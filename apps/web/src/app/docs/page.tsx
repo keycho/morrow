@@ -50,6 +50,22 @@ export default function DocsPage() {
         </div>
       </div>
 
+      <h2>anchors</h2>
+      <p className="dim">
+        the anchor is the last official close per token; the next-open print feeds the accuracy
+        stats. the indexer can maintain both automatically: a configurable delay after the
+        16:00 et close (13:00 on half days) it inserts the close, and a delay after the 09:30 et
+        open it inserts the open print, skipping weekends and holidays. an automated price that
+        jumps more than the deviation threshold from the previous anchor is rejected unless a
+        corporate action explains it, and a missing anchor past its deadline pages the operator.
+        when an expected close is missed, the engine keeps publishing but caps confidence and
+        widens the band (a stale-anchor cycle), rather than going dark. the admin endpoints
+        remain the manual override for both close and open:
+      </p>
+      <pre className="block">{`POST /v1/admin/anchors   (bearer ADMIN_TOKEN)
+  { "symbol": "tsla", "kind": "close", "price": 250.10,
+    "marketTs": "2026-07-10T20:00:00Z" }`}</pre>
+
       <h2>verification</h2>
       <p className="dim">
         each cycle, every observation becomes a canonical leaf:

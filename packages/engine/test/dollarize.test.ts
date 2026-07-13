@@ -63,6 +63,7 @@ const cfg: ModelConfig = {
   },
   marketOpen: { onchainWeight: 0.9, bandBasePct: 0.002 },
   corporateAction: { bandWidenPct: 0.03, maxConfidence: 50, changeRelTolerance: 1e-6 },
+  anchorStale: { bandWidenPct: 0.02, maxConfidence: 60 },
 };
 
 function obs(spot: number, depth: number, n = 12): EngineObservation[] {

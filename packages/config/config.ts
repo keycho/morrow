@@ -454,6 +454,14 @@ export const model = {
     // changed. guards float round-trip noise; a real split is 2x or more.
     changeRelTolerance: 1e-6,
   },
+
+  // stale anchor. when the model anchor is older than the most recent
+  // official close (an expected close print was missed), the engine keeps
+  // producing a number but caps confidence and widens the band for the cycle.
+  anchorStale: {
+    bandWidenPct: 0.02,
+    maxConfidence: 60,
+  },
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -472,17 +480,102 @@ export const calendar = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// anchors. last official close per token is the model anchor. v1 is manual
-// admin insert. the flag below reserves the wiring for a future automated
-// source without a schema change.
+// anchors. the last official close per token is the model anchor; the
+// next-open print feeds accuracy. the indexer can insert both automatically
+// on a schedule, or the operator can insert them by hand via the admin
+// endpoints (which stay as the override path).
+//
+// each token gets a generic http anchor source: a close url and an open url
+// (url templates the operator fills), a json path to the price, and a name.
+// same shape as the proxy fetcher so the http client is shared. the operator
+// wires the real quote endpoints; a mock source with realistic fixtures runs
+// in mock mode.
 // ---------------------------------------------------------------------------
 
+export interface AnchorSourceConfig {
+  name: string;
+  symbol: string;
+  // url templates. {symbol} is substituted with the token symbol.
+  closeUrl: string;
+  openUrl: string;
+  jsonPath: string;
+  timeoutMs: number;
+  retries: number;
+}
+
 export const anchors = {
-  automatedSource: false,
-  // when automatedSource is true the indexer will pull closes from this url
-  // per token. PLACEHOLDER until an automated source is chosen.
-  automatedSourceUrl: "ANCHOR_SOURCE_URL_PLACEHOLDER",
+  // master switch for the automated scheduler. off by default; the manual
+  // admin endpoints work regardless.
+  automatedSource: envBool("FLETCH_ANCHOR_AUTOMATED", false),
+  schedule: {
+    // insert the close anchor this many minutes after the 16:00 (or 13:00 on
+    // half days) et close, and the open print this many minutes after 09:30.
+    closeDelayMinutes: envNum("FLETCH_ANCHOR_CLOSE_DELAY_MIN", 15),
+    openDelayMinutes: envNum("FLETCH_ANCHOR_OPEN_DELAY_MIN", 5),
+    // if an anchor is still missing this many hours after its target, alert.
+    missedDeadlineHours: envNum("FLETCH_ANCHOR_MISSED_HOURS", 2),
+    // grace before an older-than-last-close anchor is treated as stale by the
+    // engine, so the normal insertion window does not flap the flag.
+    staleGraceMinutes: envNum("FLETCH_ANCHOR_STALE_GRACE_MIN", 30),
+  },
+  // reject an automated anchor that deviates more than this from the previous
+  // anchor of the same kind, unless the token had a corporate action.
+  deviationThreshold: 0.15,
+  // look back this far for a corporate action when validating a large jump.
+  corporateActionLookbackHours: 48,
+  sources: [
+    // PLACEHOLDER: fill closeUrl, openUrl, and jsonPath per token.
+    {
+      name: "ANCHOR_TSLA",
+      symbol: "tsla",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_AAPL",
+      symbol: "aapl",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_NVDA",
+      symbol: "nvda",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_MSFT",
+      symbol: "msft",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+    {
+      name: "ANCHOR_AMZN",
+      symbol: "amzn",
+      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
+      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
+      jsonPath: "REPLACE.WITH.PATH",
+      timeoutMs: 8_000,
+      retries: 3,
+    },
+  ] as AnchorSourceConfig[],
 } as const;
+
+export function anchorSourceFor(symbol: string): AnchorSourceConfig | undefined {
+  return anchors.sources.find((s) => s.symbol === symbol.toLowerCase());
+}
 
 // ---------------------------------------------------------------------------
 // api. rate limits and the x402 pay-per-query skeleton.
@@ -511,6 +604,15 @@ export const api = {
     network: "X402_NETWORK_PLACEHOLDER",
     payTo: "X402_PAY_TO_PLACEHOLDER",
   },
+} as const;
+
+// ---------------------------------------------------------------------------
+// ops alerting. how often the same alert condition may re-notify. ops
+// hardening (task 3) extends this with the telegram transports.
+// ---------------------------------------------------------------------------
+
+export const ops = {
+  alertCooldownMs: envNum("FLETCH_OPS_COOLDOWN_MS", 1_800_000),
 } as const;
 
 // ---------------------------------------------------------------------------

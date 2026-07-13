@@ -54,6 +54,10 @@ export interface ModelConfig {
     maxConfidence: number;
     changeRelTolerance: number;
   };
+  anchorStale: {
+    bandWidenPct: number;
+    maxConfidence: number;
+  };
 }
 
 export interface EngineObservation {
@@ -81,6 +85,11 @@ export interface FairValueInput {
   nowMs: number;
   regime: Regime;
   anchorPrice: number | null;
+  // true when the anchor is older than the most recent official close, i.e.
+  // an expected close print was missed. the engine keeps producing a number
+  // but caps confidence and widens the band so the feed does not go dark or
+  // overstate certainty. the indexer computes this from the anchor timestamp.
+  anchorStale?: boolean;
   // ascending by tsMs, all within the trailing twap window.
   observations: EngineObservation[];
   proxies: ProxyInput[];
@@ -111,6 +120,7 @@ export interface FairValueResult {
   regime: Regime;
   suspect: boolean;
   corporateAction: boolean;
+  anchorStale: boolean;
   components: FairValueComponents;
 }
 
@@ -119,6 +129,7 @@ export interface FairValueFailure {
   reason: string;
   regime: Regime;
   corporateAction: boolean;
+  anchorStale: boolean;
 }
 
 export type FairValueOutcome = FairValueResult | FairValueFailure;
@@ -270,6 +281,7 @@ export function scoreConfidence(input: ConfidenceInput, cfg: ModelConfig): numbe
 
 export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairValueOutcome {
   const { regime } = input;
+  const anchorStale = input.anchorStale === true;
 
   // corporate action: drop pre-change ticks before any pricing math runs.
   const ca = applyCorporateActionFilter(input.observations, cfg.corporateAction.changeRelTolerance);
@@ -296,7 +308,13 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
       : null;
 
   if (anchorPlusDrift === null && twap === null) {
-    return { ok: false, reason: "no anchor and no onchain observations", regime, corporateAction };
+    return {
+      ok: false,
+      reason: "no anchor and no onchain observations",
+      regime,
+      corporateAction,
+      anchorStale,
+    };
   }
 
   const baseOnchainWeight =
@@ -340,11 +358,17 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     cfg
   );
 
-  // corporate action caps confidence and widens the band for the cycle.
+  // corporate action and a stale anchor each cap confidence and widen the
+  // band for the cycle. the widen contributions add.
   if (corporateAction) {
     confidence = Math.min(confidence, cfg.corporateAction.maxConfidence);
   }
-  const caBandWiden = corporateAction ? cfg.corporateAction.bandWidenPct : 0;
+  if (anchorStale) {
+    confidence = Math.min(confidence, cfg.anchorStale.maxConfidence);
+  }
+  const extraBandWiden =
+    (corporateAction ? cfg.corporateAction.bandWidenPct : 0) +
+    (anchorStale ? cfg.anchorStale.bandWidenPct : 0);
 
   // spike guard. an onchain move beyond the threshold inside one window,
   // with flat proxies, is treated as manipulation or a broken pool until
@@ -383,7 +407,7 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     const half =
       anchorPlusDrift *
         (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100)) +
-      anchorPlusDrift * caBandWiden;
+      anchorPlusDrift * extraBandWiden;
     fair = clamp(fair, anchorPlusDrift - half, anchorPlusDrift + half);
     return {
       ok: true,
@@ -394,12 +418,14 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
       regime,
       suspect,
       corporateAction,
+      anchorStale,
       components,
     };
   }
 
   const half =
-    fair * (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100)) + fair * caBandWiden;
+    fair * (bandBasePct + cfg.band.confidenceScalePct * (1 - confidence / 100)) +
+    fair * extraBandWiden;
   return {
     ok: true,
     fairValue: fair,
@@ -409,6 +435,7 @@ export function computeFairValue(input: FairValueInput, cfg: ModelConfig): FairV
     regime,
     suspect,
     corporateAction,
+    anchorStale,
     components,
   };
 }

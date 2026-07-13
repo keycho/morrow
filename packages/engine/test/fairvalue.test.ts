@@ -28,6 +28,7 @@ const cfg: ModelConfig = {
   },
   marketOpen: { onchainWeight: 0.9, bandBasePct: 0.002 },
   corporateAction: { bandWidenPct: 0.03, maxConfidence: 50, changeRelTolerance: 1e-6 },
+  anchorStale: { bandWidenPct: 0.02, maxConfidence: 60 },
 };
 
 const NOW = Date.UTC(2026, 6, 11, 12, 0, 0); // saturday noon utc
@@ -287,6 +288,31 @@ describe("corporate action (erc-8056)", () => {
     expect(filtered.excluded).toBe(2);
     expect(filtered.observations).toHaveLength(2);
     expect(filtered.observations.every((o) => o.uiMultiplier === 10)).toBe(true);
+  });
+});
+
+describe("stale anchor", () => {
+  it("caps confidence and widens the band when the anchor is stale", () => {
+    const fresh = compute({
+      anchorStale: false,
+      proxies: [proxy("a", 100, 101), proxy("b", 100, 101)],
+      observations: flatObservations(100.8, 100_000),
+    });
+    const stale = compute({
+      anchorStale: true,
+      proxies: [proxy("a", 100, 101), proxy("b", 100, 101)],
+      observations: flatObservations(100.8, 100_000),
+    });
+    expect(stale.anchorStale).toBe(true);
+    expect(fresh.anchorStale).toBe(false);
+    // the feed does not go dark: fair value is essentially unchanged
+    expect(stale.fairValue).toBeCloseTo(fresh.fairValue, 6);
+    // but confidence is capped and the band is wider
+    expect(stale.confidence).toBeLessThanOrEqual(60);
+    expect(stale.confidence).toBeLessThanOrEqual(fresh.confidence);
+    const staleWidth = (stale.bandHigh - stale.bandLow) / stale.fairValue;
+    const freshWidth = (fresh.bandHigh - fresh.bandLow) / fresh.fairValue;
+    expect(staleWidth).toBeGreaterThan(freshWidth);
   });
 });
 

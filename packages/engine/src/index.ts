@@ -17,8 +17,17 @@ export {
   isTradingDay,
   regimeAt,
   lastCloseTime,
+  lastOpenTime,
   nextOpenTime,
 } from "./calendar.js";
+
+export {
+  type AnchorKind,
+  type AnchorValidation,
+  anchorDue,
+  validateAnchor,
+  anchorMissed,
+} from "./anchorsched.js";
 
 export {
   type ModelConfig,

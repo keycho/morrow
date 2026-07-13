@@ -38,12 +38,18 @@ import {
 import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
 import { maybeRunCycle } from "./cycle.js";
 import { publishCycle, reconcileCommits } from "./publisher.js";
+import { runAnchorScheduler } from "./anchors.js";
+import { OpsAlerter, logTransport } from "./ops.js";
+import { ops } from "@fletch/config";
 import { log } from "./log.js";
 
 let running = true;
 let lastPrunedDay = "";
 let lastCycleId: number | null = null;
 let ticksSinceReconcile = 0;
+
+// ops alerter. task 1 uses the logging transport; ops hardening adds telegram.
+const alerter = new OpsAlerter(ops.alertCooldownMs, [logTransport]);
 
 async function collectPools(
   ethUsd: EthUsdTick | null
@@ -136,6 +142,16 @@ async function tick(): Promise<void> {
 
   await insertObservations(observationRows);
   await insertProxyTicks(proxyRows);
+
+  // anchor scheduler: insert close/open anchors on schedule (no-op unless
+  // automation is enabled). never let it sink the tick.
+  try {
+    await runAnchorScheduler(now, alerter);
+  } catch (err) {
+    log.error("anchor scheduler pass failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   // run the fair value cycle and publish the commit when a new cycle begins
   try {

@@ -128,6 +128,7 @@ export interface FairValueRow {
   regime: string;
   suspect: boolean;
   corporateAction: boolean;
+  anchorStale: boolean;
   anchorPrice: number | null;
   drift: number | null;
   onchainTwap: number | null;
@@ -142,8 +143,8 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
     for (const r of rows) {
       await client.query(
         `insert into fair_values (token_id, cycle_id, ts, fair_value, confidence, band_low, band_high,
-                                  regime, suspect, corporate_action, anchor_price, drift, onchain_twap, onchain_spot, depth_quote)
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                                  regime, suspect, corporate_action, anchor_stale, anchor_price, drift, onchain_twap, onchain_spot, depth_quote)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          on conflict (token_id, cycle_id) do update set
            ts = excluded.ts,
            fair_value = excluded.fair_value,
@@ -153,6 +154,7 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
            regime = excluded.regime,
            suspect = excluded.suspect,
            corporate_action = excluded.corporate_action,
+           anchor_stale = excluded.anchor_stale,
            anchor_price = excluded.anchor_price,
            drift = excluded.drift,
            onchain_twap = excluded.onchain_twap,
@@ -169,6 +171,7 @@ export async function upsertFairValues(rows: FairValueRow[]): Promise<void> {
           r.regime,
           r.suspect,
           r.corporateAction,
+          r.anchorStale,
           r.anchorPrice,
           r.drift,
           r.onchainTwap,
@@ -337,6 +340,45 @@ export async function latestAnchor(tokenId: number, kind: "close" | "open"): Pro
   const row = res.rows[0];
   if (!row) return null;
   return { price: Number(row.price), marketTs: new Date(row.market_ts) };
+}
+
+export async function anchorExistsAt(
+  tokenId: number,
+  kind: "close" | "open",
+  marketTs: Date
+): Promise<boolean> {
+  const res = await db().query(
+    `select 1 from anchors where token_id = $1 and kind = $2 and market_ts = $3 limit 1`,
+    [tokenId, kind, marketTs]
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
+export async function insertAnchor(
+  tokenId: number,
+  kind: "close" | "open",
+  price: number,
+  marketTs: Date,
+  source: string
+): Promise<void> {
+  await db().query(
+    `insert into anchors (token_id, kind, price, market_ts, source)
+     values ($1, $2, $3, $4, $5)
+     on conflict (token_id, kind, market_ts) do update set price = excluded.price, source = excluded.source`,
+    [tokenId, kind, price, marketTs, source]
+  );
+}
+
+// whether the token had a corporate_action cycle within the lookback window.
+// used to allow a large anchor jump that a split legitimately explains.
+export async function hadRecentCorporateAction(tokenId: number, sinceHours: number): Promise<boolean> {
+  const res = await db().query(
+    `select 1 from fair_values
+     where token_id = $1 and corporate_action and ts > now() - ($2 || ' hours')::interval
+     limit 1`,
+    [tokenId, String(sinceHours)]
+  );
+  return (res.rowCount ?? 0) > 0;
 }
 
 // mock mode seeds one close anchor per token so the full model path runs

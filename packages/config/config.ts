@@ -792,10 +792,19 @@ export const calendar = {
 export interface AnchorSourceConfig {
   name: string;
   symbol: string;
-  // url templates. {symbol} is substituted with the token symbol.
+  // url templates. {symbol} -> token symbol as-is, {SYMBOL} -> uppercased
+  // (finnhub and most quote apis want uppercase tickers), {apiKey} ->
+  // anchors.apiKey (from env, never hardcoded).
   closeUrl: string;
   openUrl: string;
+  // default json path to the price. used when the per-kind override below is
+  // not set.
   jsonPath: string;
+  // optional per-kind overrides. a single endpoint (e.g. finnhub /quote)
+  // returns both the previous close and the open, at different fields, so the
+  // close and open anchors read different paths from the same response.
+  closeJsonPath?: string;
+  openJsonPath?: string;
   timeoutMs: number;
   retries: number;
 }
@@ -804,6 +813,9 @@ export const anchors = {
   // master switch for the automated scheduler. off by default; the manual
   // admin endpoints work regardless.
   automatedSource: envBool("MORROW_ANCHOR_AUTOMATED", false),
+  // api key for the anchor quote source (finnhub), substituted into the url
+  // templates as {apiKey}. secret: env only, never hardcoded or committed.
+  apiKey: env("ANCHOR_API_KEY", ""),
   schedule: {
     // insert the close anchor this many minutes after the 16:00 (or 13:00 on
     // half days) et close, and the open print this many minutes after 09:30.
@@ -821,31 +833,40 @@ export const anchors = {
   // look back this far for a corporate action when validating a large jump.
   corporateActionLookbackHours: 48,
   sources: [
-    // PLACEHOLDER: fill closeUrl, openUrl, and jsonPath per token.
+    // tsla, aapl, nvda, googl are wired to finnhub's /quote endpoint: one call
+    // returns the previous close (pc) for the close anchor and the day's open
+    // (o) for the open anchor. {SYMBOL} is the uppercased ticker, {apiKey} is
+    // anchors.apiKey from env. msft, amzn, meta, spy remain placeholders.
     {
       name: "ANCHOR_TSLA",
       symbol: "tsla",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },
     {
       name: "ANCHOR_AAPL",
       symbol: "aapl",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },
     {
       name: "ANCHOR_NVDA",
       symbol: "nvda",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },
@@ -870,9 +891,11 @@ export const anchors = {
     {
       name: "ANCHOR_GOOGL",
       symbol: "googl",
-      closeUrl: "https://ANCHOR_SOURCE_URL/{symbol}/close",
-      openUrl: "https://ANCHOR_SOURCE_URL/{symbol}/open",
-      jsonPath: "REPLACE.WITH.PATH",
+      closeUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      openUrl: "https://finnhub.io/api/v1/quote?symbol={SYMBOL}&token={apiKey}",
+      jsonPath: "pc",
+      closeJsonPath: "pc",
+      openJsonPath: "o",
       timeoutMs: 8_000,
       retries: 3,
     },

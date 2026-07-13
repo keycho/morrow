@@ -47,7 +47,18 @@ const calendarConfig: CalendarConfig = {
 
 function urlFor(source: AnchorSourceConfig, kind: AnchorKind, symbol: string): string {
   const template = kind === "close" ? source.closeUrl : source.openUrl;
-  return template.replace("{symbol}", symbol);
+  return template
+    .replaceAll("{symbol}", symbol)
+    .replaceAll("{SYMBOL}", symbol.toUpperCase())
+    .replaceAll("{apiKey}", anchors.apiKey);
+}
+
+// the price field to read for this kind: the per-kind override when set (a
+// single quote endpoint exposes previous-close and open at different fields),
+// else the source default.
+function jsonPathFor(source: AnchorSourceConfig, kind: AnchorKind): string {
+  const override = kind === "close" ? source.closeJsonPath : source.openJsonPath;
+  return override ?? source.jsonPath;
 }
 
 async function fetchAnchorPrice(
@@ -66,7 +77,7 @@ async function fetchAnchorPrice(
     name: `${source.name}:${kind}`,
     symbol,
     url: urlFor(source, kind, symbol),
-    jsonPath: source.jsonPath,
+    jsonPath: jsonPathFor(source, kind),
     weight: 1,
     timeoutMs: source.timeoutMs,
     retries: source.retries,

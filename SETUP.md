@@ -130,32 +130,37 @@ implausible. an implausible pool is shown with the flag but never selected, so
 a tokenized market trading far from the underlying cannot silently become the
 tracked pool.
 
-honest launch set from a live full-universe run (july 2026, 25 candidate
-tokens, 51 pools found, eth/usd 3500 for weth/eth depth), already reflected in
-config. the six tracked tokens each have a real v4 usdg pool at a plausible
+honest launch set from a live full-universe run over all ~95 verified robinhood
+chain equity tokens (july 2026, 145 pools found, eth/usd 3500 for weth/eth
+depth), already reflected in config. only seven pools clear ~$1,000 of ±2%
+depth; the six tracked tokens each have a real v4 usdg pool at a plausible
 price:
 
-- tsla: pool 0x8517f807.., depth ~$4,050, ~$395/share (vs ~397 ref).
-- aapl: pool 0xda4116b5.., depth ~$6,500, ~$319/share (vs ~298 ref, ~7%).
+- tsla: pool 0x8517f807.., depth ~$4,000, ~$392/share (vs ~397 ref).
+- aapl: pool 0xda4116b5.., depth ~$2,900, ~$316/share (vs ~298 ref, ~6%).
   (an earlier config note used a stale ~235 reference and wrongly excluded this
   pool; at the real ~298 it is inside the gate.)
-- nvda: pool 0x3bb34a44.., invert true, depth ~$5,800, ~$205/share.
-- googl: pool 0xef22239f.., depth ~$5,600, ~$355/share (vs ~331 ref, ~7%).
+- nvda: pool 0x3bb34a44.., invert true, depth ~$5,500, ~$204/share.
+- googl: pool 0xef22239f.., depth ~$4,200, ~$355/share (vs ~331 ref, ~7%).
 - meta: pool 0x5875d407.., invert true, depth ~$1,770, ~$661/share.
 - spy: pool 0x7eeda68c.., depth ~$1,290, ~$743/share (s&p 500 etf).
 
-not tracked, left as captured `availableStockTokens` for a future run:
+the whole equity universe is captured in `availableStockTokens` and probed
+every run, but nothing else clears the bar:
 
-- msft, amzn: no usable pool on any venue. amzn/msft also sit in `tokens` as
-  null, which blocks live boot until a pool exists or they are removed.
-- spcx (spacex): the deepest pool on the network (~$15,000) but a private,
+- spcx (spacex): the deepest pool on the network (~$12,000) but a private,
   pre-ipo equity with no official market close to anchor, so the off-hours
   fair-value model (last close + 24/7 drift) cannot price it. tracked only if a
   close reference is defined for it.
-- pltr (~$130, depth ~$620): plausible but thin; promote once deeper.
-- amd (~$541), mu (~$933): thin pools priced well above the underlying; do not
-  track until a real anchor confirms them (exactly what the gate is for).
-- qqq, sndk, slv and the rest: no pool or effectively empty.
+- ~74 further tokens (dell, mstr, lly, asml, cost, tsm, avgo, ba, ... ) have a
+  real but boilerplate-thin pool clustered around $500-715 of ±2% depth, far
+  below the model depth floor, so their onchain weight would be ~0. left
+  captured; the weekly worker alerts if any deepens into a real market.
+- msft, amzn: no usable pool at all. both also sit in `tokens` as null, which
+  blocks live boot until a pool exists or they are removed.
+- arm, dram, nasa, nok, rvi: on the operator's list but no full verified
+  address resolved on chain, so intentionally absent (not guessed); voo and
+  openai likewise have no on-chain contract.
 
 promote a captured token by re-running discovery (its `promotable available
 tokens` snippet block), giving it a fresh unused id, and wiring a proxy and

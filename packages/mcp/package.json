@@ -1,0 +1,42 @@
+{
+  "name": "fletch-oracle-mcp",
+  "version": "0.1.0",
+  "description": "mcp server for fletch, the off-hours fair value oracle for tokenized equities on robinhood chain. read-only data tools plus independent merkle verification.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "fletch-oracle-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "test": "echo verification logic is exercised by the engine test suite and the api smoke test",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "mcp",
+    "oracle",
+    "robinhood-chain",
+    "fair-value",
+    "tokenized-equities"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "viem": "^2.21.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

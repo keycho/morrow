@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+
+# env. secrets never enter the repo.
+.env
+.env.*
+!.env.example
+
+# builds
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# foundry
+packages/contracts/cache/
+packages/contracts/out/
+packages/contracts/broadcast/
+
+# misc
+.DS_Store
+*.log
+.vercel
+.turbo

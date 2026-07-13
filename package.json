@@ -1,0 +1,23 @@
+{
+  "name": "fletch",
+  "private": true,
+  "version": "0.1.0",
+  "description": "off-hours fair value oracle for tokenized equities on robinhood chain",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev:indexer": "pnpm --filter @fletch/indexer dev",
+    "dev:api": "pnpm --filter @fletch/api dev",
+    "dev:web": "pnpm --filter @fletch/web dev"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

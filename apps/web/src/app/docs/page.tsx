@@ -27,8 +27,10 @@ export default function DocsPage() {
           </span>
           <span className="k">onchain</span>
           <span className="v">
-            liquidity-weighted twap of the uniswap v3 pool over the trailing window. weight
-            scales down as ±2% depth falls below the floor; the twap is clamped to a maximum
+            liquidity-weighted twap of the selected uniswap pool over the trailing window. the
+            pool can live in uniswap v2, v3, or v4; each venue&apos;s price and ±2% depth are
+            read into one common measure, so the depth floor means the same thing everywhere.
+            weight scales down as depth falls below the floor; the twap is clamped to a maximum
             deviation around anchor+drift so a thin pool cannot drag fair value
           </span>
           <span className="k">fair value</span>

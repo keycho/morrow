@@ -24,6 +24,7 @@
   },
   "devDependencies": {
     "@fletch/config": "workspace:*",
+    "@fletch/discovery": "workspace:*",
     "@fletch/engine": "workspace:*",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.0",

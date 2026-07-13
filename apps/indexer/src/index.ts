@@ -40,6 +40,7 @@ import { maybeRunCycle } from "./cycle.js";
 import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publisher.js";
 import { runAnchorScheduler } from "./anchors.js";
 import { maybeGenerateReceipt } from "./receipts.js";
+import { maybeRunDiscovery } from "./discovery.js";
 import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
 import { ops, telegram } from "@fletch/config";
 import { log } from "./log.js";
@@ -215,6 +216,12 @@ async function tick(): Promise<void> {
   // weekly accuracy receipt: generate on the configured day after the open.
   await maybeGenerateReceipt(now).catch((err) =>
     log.warn("receipt scheduler failed", { message: String(err) })
+  );
+
+  // weekly pool discovery: probe every venue, record the run, alert on a new
+  // pool for an unconfigured token or a configured pool drying up.
+  await maybeRunDiscovery(now, ethUsd?.rate ?? null, alerter).catch((err) =>
+    log.warn("discovery scheduler failed", { message: String(err) })
   );
 
   // every ~10 ticks, retry anything unconfirmed

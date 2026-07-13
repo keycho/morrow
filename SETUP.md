@@ -85,41 +85,81 @@ not be used for the indexer or for discovery.
 
 ## step 3. discover pools
 
-pool addresses are not published as a table; they are resolved from the v3
-factory. the discovery script probes usdg and weth quotes across the 500,
-3000, and 10000 fee tiers for each launch token, reads each pool, and prints
-a ready-to-paste config snippet selecting the deepest pool per token
+pool addresses are not published as a table; they are resolved from each
+venue. discovery probes uniswap v2, v3, and v4 for every launch token:
+
+- v3: usdg and weth quotes across the 500, 3000, 10000 fee tiers
+- v2: usdg and weth pairs
+- v4: usdg, weth (erc20), and native eth quotes across the standard
+  fee/tick-spacing combos, at the no-hook pool id, read through the state-view
+  lens by pool id (not a per-pool address)
+
+each hit is read and priced through the erc-8056 ui multiplier, and its depth
+is normalized to the same ±2% quote-depth measure across venues (v2's
+constant-product reserves and v3/v4's concentrated liquidity resolve to one
+comparable number, so the model's depth floor means the same thing
+everywhere). the script prints one table sorted by dollar depth plus a
+ready-to-paste config snippet selecting the deepest usable pool per token
 (preferring usdg, since fair value is dollar denominated).
 
 ```
 FLETCH_RPC_URL=<your rpc url> pnpm discover-pools
+# machine-readable (stdout is pure json, logs go to stderr):
+FLETCH_RPC_URL=<your rpc url> pnpm --silent discover-pools --json
 ```
 
-paste the emitted snippet's `pool`, `invert`, `quote`, and `quoteDecimals`
-values into the matching entries in `tokens` in `packages/config/config.ts`.
-the script excludes any token with no pool from the launch set and flags any
-weth-only token as needing an eth/usd proxy to dollarize (not wired in v1).
+the v2 factory, v4 pool manager, and v4 state-view addresses in config were
+confirmed as deployed contracts on chain (code size greater than zero) before
+being trusted, the same check the multicall3 address gets. never assume a
+venue address; verify it.
 
-what a discovery run found (block ~8.7m, july 2026), already reflected in
-config:
+paste the emitted snippet's `protocol`, `pool`, `invert`, `quote`, and
+`quoteDecimals` values into the matching entries in `tokens` in
+`packages/config/config.ts`. `pool` is a pool/pair address for v2 and v3, or a
+v4 pool id (bytes32) for v4. the script excludes any token with no usable pool
+from the launch set and flags any weth-only token as needing an eth/usd proxy
+to dollarize.
 
-- tsla: usdg pool 0xf4ACdAEE.., fee 3000, filled. thin (near-zero depth).
-- nvda: usdg pool 0xB944cec3.., fee 3000, invert true, filled. has depth.
-- aapl: only a weth pool (0x8bb3514e..), and it is empty (zero liquidity,
-  implausible ~600 usd/share at eth/usd 3500 vs an aapl real of ~230).
-  dollarization is wired (see below), but this pool is not a real market,
-  so aapl is left null and excluded.
-- msft, amzn: no v3 pool on usdg or weth. left null, excluded.
+plausibility gate: when `DATABASE_URL` is set, discovery reads the latest close
+anchor per token as a reference and marks any pool whose per-share price
+deviates more than `FLETCH_DISCOVERY_PLAUSIBILITY` (default 25%) from it as
+implausible. an implausible pool is shown with the flag but never selected, so
+a tokenized market trading far from the underlying cannot silently become the
+tracked pool.
 
-weth-quoted pools and dollarization: a weth pool prices a stock in eth, not
-dollars. the reader dollarizes weth pools by multiplying price and depth by
-an eth/usd rate (`dollarization.ethUsdSource` in config, fetched alongside
-the proxies and gated by `FLETCH_ETHUSD_STALENESS_MS`). a stale eth/usd rate
-skips the weth token for that tick, which degrades confidence rather than
-publishing a wrong price. to enable a real weth token later: set its `quote`
-to "weth", fill pool/invert/quoteDecimals from discovery (run with
-`ETH_USD=<rate>` to see dollarized prices), and set `FLETCH_ETHUSD_URL` and
+honest launch set from a live run (july 2026, eth/usd 3500 for weth/eth depth,
+with real close anchors as the reference), already reflected in config:
+
+- tsla: v4 usdg pool 0x8517f807.., depth ~$4,050, ~$396/share (vs ~392 close,
+  ~1%). filled. deeper than its v3 usdg pool, which is empty.
+- nvda: v4 usdg pool 0x3bb34a44.., invert true, depth ~$5,800, ~$207/share (vs
+  ~206 close). filled. ~7x deeper than its v3 usdg pool.
+- aapl: a real v4 usdg pool exists (0xda4116b5.., depth ~$6,500) but prices
+  ~$319/share, ~36% above an aapl real of ~235, so it fails the plausibility
+  gate and is excluded (left null) until the market converges or the operator
+  confirms it. this is the case discovery is built to catch, not a bug.
+- msft: no pool on any venue. left null, excluded.
+- amzn: only an empty v4 native-eth pool (zero liquidity). left null, excluded.
+
+weth-quoted pools and dollarization: a weth or native-eth pool prices a stock
+in eth, not dollars. the reader dollarizes it by multiplying price and depth by
+an eth/usd rate (`dollarization.ethUsdSource` in config, fetched alongside the
+proxies and gated by `FLETCH_ETHUSD_STALENESS_MS`). a stale eth/usd rate skips
+the token for that tick, which degrades confidence rather than publishing a
+wrong price. to enable a real weth/eth token later: set its `quote` to "weth",
+fill protocol/pool/invert/quoteDecimals from discovery (run with `ETH_USD=<rate>`
+to see dollarized prices and depth), and set `FLETCH_ETHUSD_URL` and
 `FLETCH_ETHUSD_JSONPATH`. none of the current launch tokens need this.
+
+keeping discovery current: the indexer runs a discovery pass on a weekly
+schedule (`FLETCH_DISCOVERY_AUTO`, default on; `FLETCH_DISCOVERY_WEEKDAY` /
+`FLETCH_DISCOVERY_HOUR_ET`) and records every run — cli or worker — in the
+`pool_discovery_runs` table, so pool liquidity arriving over time becomes a
+queryable dataset. the worker never edits config; it raises an ops alert when
+a usable pool appears for a token that is currently null, or when a configured
+pool's dollar depth stays below `FLETCH_DISCOVERY_DEPTH_ALERT_USD` (default
+$500) for `FLETCH_DISCOVERY_DEPTH_ALERT_RUNS` (default 3) consecutive runs. you
+review the alert and update config by hand.
 
 re-run discovery against your own production rpc before launch; pools and
 liquidity evolve. then either fill the remaining tokens or remove them from
@@ -127,8 +167,8 @@ the `tokens` array. `assertConfigReady()` refuses to boot live mode while any
 listed token's pool is still null, so a missing pool fails loudly at startup
 rather than publishing nothing for that token.
 
-note on liquidity: tokenized float is extremely thin at launch (the tsla pool
-had zero active liquidity at discovery). expect the depth floor to hold the
+note on liquidity: tokenized float is extremely thin at launch (the deepest
+launch pools are a few thousand dollars). expect the depth floor to hold the
 onchain weight near zero, so fair value will be mostly anchor plus proxy
 drift. that is correct behavior, surfaced honestly through the confidence
 score, not a bug.
@@ -258,6 +298,22 @@ headless browser); if it is not installed the markdown and svg still generate
 and the png is omitted. receipts are generated only, never auto-posted; post
 the cards yourself from the `/receipts` page or `GET /v1/receipts`.
 
+## weekly discovery
+
+the indexer runs a multi-protocol discovery pass weekly (default monday at noon
+et, `FLETCH_DISCOVERY_*`) and records every run in `pool_discovery_runs`. it
+does not edit config; it alerts when a usable pool appears for a null token or a
+configured pool's depth stays below the floor for several runs (see the runbook
+below). to run one by hand and inspect the dataset:
+
+```
+FLETCH_RPC_URL=... DATABASE_URL=... pnpm discover-pools          # table + snippet
+FLETCH_RPC_URL=... DATABASE_URL=... pnpm --silent discover-pools --json > run.json
+```
+
+both the cli and the worker append to the same table, so the history of which
+venues and pools appeared, at what depth, week by week, is one query away.
+
 ## optional. publish the mcp package
 
 (unchanged; see `packages/mcp/README.md`.)
@@ -285,6 +341,8 @@ to check:
 | anchor rejected | an automated anchor jumped over the threshold with no corporate action | verify the print at the source; if it is a real split, the flag clears once a corporate_action cycle records; otherwise insert the correct anchor manually |
 | anchor missed deadline | an anchor is still missing hours after its target | check the anchor source url and json path; insert manually to unblock, the engine is running stale-anchor meanwhile |
 | api 5xx spike | the api returned many 5xx in the window | check the api logs and the db; likely a query or connection issue |
+| discovery: new pool | a usable pool appeared for a token that is null in config | review the pool in `pool_discovery_runs` (or run `pnpm discover-pools`); if it is a real market, add protocol/pool/invert/quote to config by hand |
+| discovery: pool depth low | a configured pool's depth stayed below the alert floor for several runs | the pool may be drying up; check `pool_discovery_runs`, and consider re-running discovery for a deeper venue or lowering the token's weight |
 | indexer/api crashed | an unhandled error took a worker down | read the crash message in the page and the worker logs; the process exits non-zero so railway restarts it |
 
 ## verify the deployment

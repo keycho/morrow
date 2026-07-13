@@ -441,9 +441,20 @@ export const discovery = {
   // prefer a usdg pool when its dollar depth is at least this fraction of the
   // deepest pool found for the token, since fair value is dollar denominated.
   usdgComparableFactor: 0.5,
-  // depth below the model depth floor for this many consecutive weekly runs
-  // raises an ops alert (task 3).
-  depthBelowFloorRuns: 3,
+  // a configured pool whose dollar depth stays below this for this many
+  // consecutive weekly runs raises an ops alert (the pool is drying up). this
+  // is a low drying-up floor, distinct from the model depth floor that scales
+  // the onchain weight; launch pools already sit below the model floor, so
+  // alerting on that would be constant noise.
+  depthAlertFloorUsd: envNum("FLETCH_DISCOVERY_DEPTH_ALERT_USD", 500),
+  depthBelowFloorRuns: envNum("FLETCH_DISCOVERY_DEPTH_ALERT_RUNS", 3),
+  // weekly scheduled discovery run in the indexer worker.
+  schedule: {
+    autoWeekly: envBool("FLETCH_DISCOVERY_AUTO", true),
+    // day of week in America/New_York (1 = monday) and the hour to run at.
+    weekday: envNum("FLETCH_DISCOVERY_WEEKDAY", 1),
+    hourEt: envNum("FLETCH_DISCOVERY_HOUR_ET", 12),
+  },
 } as const;
 
 // circuit breaker for proxy sources and the rpc.

@@ -11,6 +11,9 @@ importers:
       '@fletch/config':
         specifier: workspace:*
         version: link:packages/config
+      '@fletch/discovery':
+        specifier: workspace:*
+        version: link:packages/discovery
       '@fletch/engine':
         specifier: workspace:*
         version: link:packages/engine
@@ -78,6 +81,9 @@ importers:
       '@fletch/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@fletch/discovery':
+        specifier: workspace:*
+        version: link:../../packages/discovery
       '@fletch/engine':
         specifier: workspace:*
         version: link:../../packages/engine
@@ -145,6 +151,34 @@ importers:
         version: 5.9.3
 
   packages/contracts: {}
+
+  packages/discovery:
+    dependencies:
+      '@fletch/config':
+        specifier: workspace:*
+        version: link:../config
+      '@fletch/engine':
+        specifier: workspace:*
+        version: link:../engine
+      pg:
+        specifier: ^8.13.0
+        version: 8.22.0
+      viem:
+        specifier: ^2.21.0
+        version: 2.55.1(typescript@5.9.3)(zod@3.25.76)
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9(@types/node@22.20.1)
 
   packages/engine:
     dependencies:

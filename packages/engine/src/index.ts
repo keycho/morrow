@@ -58,6 +58,14 @@ export {
 export { type EthUsdTick, ethUsdUsable, dollarize } from "./dollarize.js";
 
 export {
+  spotFromSqrtPriceX96,
+  depthFromSqrtPriceX96,
+  spotFromReserves,
+  depthFromReserves,
+  v4PoolId,
+} from "./poolmath.js";
+
+export {
   type LeafInput,
   type MerkleTree,
   canonicalLeafString,

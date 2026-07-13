@@ -1,47 +1,56 @@
-// uniswap v3 pool reading on robinhood chain via viem.
+// pool reading on robinhood chain via viem, across uniswap v2, v3, and v4.
 //
-// per token per tick we record:
-//   - effective per-share price (raw pool price adjusted by the erc-8056 ui
-//     multiplier, so a split does not distort the series)
-//   - approximate quote-token liquidity depth within ±2% of spot
-//   - cumulative swap volume delta since the previous tick (quote units)
-//   - the ui multiplier in force, and a flag if the token lacks the function
-//   - block number and timestamp
+// the venue is a property of the token config (`protocol`), not baked into the
+// code. one reader per protocol produces a normalized reading:
+//   - raw per-share price (quote per stock token, before the ui multiplier)
+//   - ±2% depth in quote units
+//   - the erc-8056 ui multiplier
+// then the common path applies the multiplier and, for weth-quoted pools, the
+// eth/usd dollarization, identically regardless of venue.
 //
-// slot0, liquidity, and uiMultiplier are read in one multicall against the
-// robinhood chain multicall contract (address from config). a token that
-// does not expose uiMultiplier() is handled: the multiplier is treated as 1
-// and the tick is flagged missing.
+// v3 and v4 are concentrated-liquidity: sqrtPriceX96 + in-range liquidity.
+// v4 pools live in a singleton pool manager and are read through the
+// state-view lens by pool id (stored in `pool`), not a per-pool address.
+// v2 is constant-product: price and depth come from the pair reserves,
+// normalized to the same ±2% quote-depth measure so the engine's depth floor
+// means the same thing across venues (see @fletch/engine poolmath).
 //
-// depth approximation: we assume the in-range liquidity L is constant across
-// the ±2% span (no tick-crossing simulation). that is a deliberate v1
-// simplification; it is a gauge for weighting, not a settlement number.
-//
-// note: this assumes the quote is a dollar stablecoin (usdg). a weth-quoted
-// token would need an eth/usd rate to dollarize the price; discovery flags
-// such tokens and they are excluded from the usdg launch set.
+// depth uses the constant-in-range-liquidity approximation for v3/v4 and the
+// closed-form constant-product move for v2; both are weighting gauges, not
+// settlement numbers.
 
-import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
-import { chain, dollarization, tokens, type TokenConfig } from "@fletch/config";
+import { createPublicClient, http, parseAbi, type Hex, type PublicClient } from "viem";
+import { chain, dollarization, tokens, uniswapV4, type TokenConfig } from "@fletch/config";
 import {
   decodeUiMultiplier,
+  depthFromReserves,
+  depthFromSqrtPriceX96,
   dollarize,
   effectivePerSharePrice,
   ethUsdUsable,
+  spotFromReserves,
+  spotFromSqrtPriceX96,
   type EthUsdTick,
 } from "@fletch/engine";
 import { log } from "./log.js";
 import { backoffDelayMs, sleep } from "./breaker.js";
 
-const poolAbi = parseAbi([
+const v3PoolAbi = parseAbi([
   "function slot0() view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
   "function liquidity() view returns (uint128)",
   "event Swap(address indexed sender, address indexed recipient, int256 amount0, int256 amount1, uint160 sqrtPriceX96, uint128 liquidity, int24 tick)",
 ]);
 
-const erc8056Abi = parseAbi(["function uiMultiplier() view returns (uint256)"]);
+const v2PairAbi = parseAbi([
+  "function getReserves() view returns (uint112 reserve0, uint112 reserve1, uint32 blockTimestampLast)",
+]);
 
-const Q96 = 2 ** 96;
+const v4StateViewAbi = parseAbi([
+  "function getSlot0(bytes32 poolId) view returns (uint160 sqrtPriceX96, int24 tick, uint24 protocolFee, uint24 lpFee)",
+  "function getLiquidity(bytes32 poolId) view returns (uint128 liquidity)",
+]);
+
+const erc8056Abi = parseAbi(["function uiMultiplier() view returns (uint256)"]);
 
 let client: PublicClient | null = null;
 
@@ -88,43 +97,97 @@ export class EthUsdUnavailableError extends Error {
   }
 }
 
-// raw v3 price is token1-per-token0 in raw units: (sqrtPriceX96 / 2^96)^2.
-// human spot (quote per stock token) depends on which side the stock is.
-function spotFromSqrtPrice(sqrtPriceX96: bigint, t: TokenConfig): number {
-  const sp = Number(sqrtPriceX96) / Q96;
-  const rawPrice = sp * sp; // token1 per token0, raw units
-  if (!t.invert) {
-    // stock = token0, quote = token1
-    return rawPrice * 10 ** (t.baseDecimals - t.quoteDecimals);
-  }
-  // stock = token1, quote = token0
-  return (1 / rawPrice) * 10 ** (t.baseDecimals - t.quoteDecimals);
+// normalized reading from any venue, before the multiplier and dollarization.
+interface RawRead {
+  rawSpot: number;
+  depthQuote: number;
+  rawMultiplier: bigint | null;
 }
 
-// two-sided quote depth to move the stock price ±2%, assuming constant L.
-function depthQuote2pct(sqrtPriceX96: bigint, liquidity: bigint, t: TokenConfig): number {
-  const sp = Number(sqrtPriceX96) / Q96;
-  const L = Number(liquidity);
-  if (L === 0 || sp === 0) return 0;
-  const up = Math.sqrt(1.02);
-  const dn = Math.sqrt(0.98);
-  let quoteRaw: number;
-  if (!t.invert) {
-    // quote = token1. token1 in to push raw price +2%, token1 out on -2%.
-    quoteRaw = L * sp * (up - 1) + L * sp * (1 - dn);
-  } else {
-    // quote = token0. stock +2% means raw price -2% and vice versa.
-    quoteRaw = (L / sp) * (1 / dn - 1) + (L / sp) * (1 - 1 / up);
+async function readV3(c: PublicClient, t: TokenConfig, pool: Hex): Promise<RawRead> {
+  const [slot0Res, liqRes, multRes] = await c.multicall({
+    multicallAddress: chain.multicall3,
+    allowFailure: true,
+    contracts: [
+      { address: pool, abi: v3PoolAbi, functionName: "slot0" },
+      { address: pool, abi: v3PoolAbi, functionName: "liquidity" },
+      { address: t.address, abi: erc8056Abi, functionName: "uiMultiplier" },
+    ],
+  });
+  if (slot0Res.status !== "success" || liqRes.status !== "success") {
+    throw new Error("v3 slot0 or liquidity read failed");
   }
-  return quoteRaw / 10 ** t.quoteDecimals;
+  const sqrtPriceX96 = slot0Res.result[0];
+  return {
+    rawSpot: spotFromSqrtPriceX96(sqrtPriceX96, t.baseDecimals, t.quoteDecimals, t.invert),
+    depthQuote: depthFromSqrtPriceX96(sqrtPriceX96, liqRes.result, t.quoteDecimals, t.invert),
+    rawMultiplier: multRes.status === "success" ? (multRes.result as bigint) : null,
+  };
 }
 
-// track the last block we summed swap volume through, per pool.
+async function readV4(c: PublicClient, t: TokenConfig, poolId: Hex): Promise<RawRead> {
+  const [slot0Res, liqRes, multRes] = await c.multicall({
+    multicallAddress: chain.multicall3,
+    allowFailure: true,
+    contracts: [
+      { address: uniswapV4.stateView, abi: v4StateViewAbi, functionName: "getSlot0", args: [poolId] },
+      { address: uniswapV4.stateView, abi: v4StateViewAbi, functionName: "getLiquidity", args: [poolId] },
+      { address: t.address, abi: erc8056Abi, functionName: "uiMultiplier" },
+    ],
+  });
+  if (slot0Res.status !== "success" || liqRes.status !== "success") {
+    throw new Error("v4 state-view read failed");
+  }
+  const sqrtPriceX96 = slot0Res.result[0];
+  return {
+    rawSpot: spotFromSqrtPriceX96(sqrtPriceX96, t.baseDecimals, t.quoteDecimals, t.invert),
+    depthQuote: depthFromSqrtPriceX96(sqrtPriceX96, liqRes.result, t.quoteDecimals, t.invert),
+    rawMultiplier: multRes.status === "success" ? (multRes.result as bigint) : null,
+  };
+}
+
+async function readV2(c: PublicClient, t: TokenConfig, pair: Hex): Promise<RawRead> {
+  const [reservesRes, multRes] = await c.multicall({
+    multicallAddress: chain.multicall3,
+    allowFailure: true,
+    contracts: [
+      { address: pair, abi: v2PairAbi, functionName: "getReserves" },
+      { address: t.address, abi: erc8056Abi, functionName: "uiMultiplier" },
+    ],
+  });
+  if (reservesRes.status !== "success") {
+    throw new Error("v2 getReserves read failed");
+  }
+  const reserve0 = reservesRes.result[0];
+  const reserve1 = reservesRes.result[1];
+  return {
+    rawSpot: spotFromReserves(reserve0, reserve1, t.baseDecimals, t.quoteDecimals, t.invert),
+    depthQuote: depthFromReserves(reserve0, reserve1, t.quoteDecimals, t.invert),
+    rawMultiplier: multRes.status === "success" ? (multRes.result as bigint) : null,
+  };
+}
+
+function readByProtocol(c: PublicClient, t: TokenConfig, pool: Hex): Promise<RawRead> {
+  switch (t.protocol) {
+    case "v3":
+      return readV3(c, t, pool);
+    case "v4":
+      return readV4(c, t, pool);
+    case "v2":
+      return readV2(c, t, pool);
+    default:
+      throw new Error(`unknown protocol "${String(t.protocol)}" for ${t.symbol}`);
+  }
+}
+
+// swap volume since the previous read. v3 only: swaps for v2 and v4 are not
+// emitted per pool address (v4 emits from the singleton pool manager), so
+// volume is best-effort and reported as zero for those venues.
 const lastVolumeBlock = new Map<string, bigint>();
 
-async function volumeDeltaQuote(
+async function volumeDeltaQuoteV3(
   t: TokenConfig,
-  pool: `0x${string}`,
+  pool: Hex,
   currentBlock: bigint
 ): Promise<number> {
   const from = lastVolumeBlock.get(pool);
@@ -133,7 +196,7 @@ async function volumeDeltaQuote(
   try {
     const logs = await rpcClient().getLogs({
       address: pool,
-      event: poolAbi[2],
+      event: v3PoolAbi[2],
       fromBlock: from + 1n,
       toBlock: currentBlock,
     });
@@ -146,7 +209,6 @@ async function volumeDeltaQuote(
     }
     return quoteRaw / 10 ** t.quoteDecimals;
   } catch (err) {
-    // volume is best effort. a failed log query must not sink the tick.
     log.warn("swap log query failed", {
       pool,
       message: err instanceof Error ? err.message : String(err),
@@ -170,44 +232,22 @@ export async function readPool(t: TokenConfig, ethUsd: EthUsdTick | null): Promi
     try {
       const c = rpcClient();
       const block = await c.getBlock();
+      const raw = await readByProtocol(c, t, pool);
 
-      // slot0, liquidity, and the erc-8056 ui multiplier in one multicall.
-      // allowFailure lets a token without uiMultiplier() degrade to m = 1.
-      const [slot0Res, liquidityRes, multiplierRes] = await c.multicall({
-        multicallAddress: chain.multicall3,
-        allowFailure: true,
-        contracts: [
-          { address: pool, abi: poolAbi, functionName: "slot0" },
-          { address: pool, abi: poolAbi, functionName: "liquidity" },
-          { address: t.address, abi: erc8056Abi, functionName: "uiMultiplier" },
-        ],
-      });
-
-      if (slot0Res.status !== "success" || liquidityRes.status !== "success") {
-        throw new Error("slot0 or liquidity read failed");
-      }
-      const sqrtPriceX96 = slot0Res.result[0];
-      const liquidity = liquidityRes.result;
-
-      const rawMultiplier =
-        multiplierRes.status === "success" ? (multiplierRes.result as bigint) : null;
-      const { multiplier, missing } = decodeUiMultiplier(rawMultiplier);
-
-      const rawSpot = spotFromSqrtPrice(sqrtPriceX96, t);
-      // per-share price in quote units (usd for usdg, eth for weth)
-      const perShareQuote = effectivePerSharePrice(rawSpot, multiplier);
-      const depthQuote = depthQuote2pct(sqrtPriceX96, liquidity, t);
-      const volume = await volumeDeltaQuote(t, pool, block.number);
+      const { multiplier, missing } = decodeUiMultiplier(raw.rawMultiplier);
+      const perShareQuote = effectivePerSharePrice(raw.rawSpot, multiplier);
+      const volume =
+        t.protocol === "v3" ? await volumeDeltaQuoteV3(t, pool, block.number) : 0;
 
       // dollarize weth-quoted pools. usability was checked before the loop.
       let spot = perShareQuote;
-      let depth = depthQuote;
+      let depth = raw.depthQuote;
       let ethUsdRate: number | null = null;
       if (isWeth) {
         const rate = ethUsd!.rate;
         ethUsdRate = rate;
         spot = dollarize(perShareQuote, rate);
-        depth = dollarize(depthQuote, rate);
+        depth = dollarize(raw.depthQuote, rate);
       }
 
       return {
@@ -215,7 +255,7 @@ export async function readPool(t: TokenConfig, ethUsd: EthUsdTick | null): Promi
         blockNumber: block.number,
         ts: new Date(Number(block.timestamp) * 1000),
         spot,
-        rawSpot,
+        rawSpot: raw.rawSpot,
         depthQuote2pct: depth,
         volumeDeltaQuote: volume,
         uiMultiplier: multiplier,

@@ -88,6 +88,43 @@ export const uniswap = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// uniswap v2 on robinhood chain. addresses from developers.uniswap.org and
+// confirmed as deployed contracts on chain (code size greater than zero)
+// during discovery. never assume a factory address; verify it.
+// ---------------------------------------------------------------------------
+
+export const uniswapV2 = {
+  factory: "0x8bceaa40b9acdfaedf85adf4ff01f5ad6517937f" as `0x${string}`,
+  router: "0x89e5db8b5aa49aa85ac63f691524311aeb649eba" as `0x${string}`,
+} as const;
+
+// ---------------------------------------------------------------------------
+// uniswap v4 on robinhood chain. v4 pools live in a singleton pool manager and
+// are identified by a pool id (keccak of the pool key), not a per-pool
+// address. state is read through the state-view lens by pool id. addresses
+// from developers.uniswap.org and confirmed deployed on chain during
+// discovery; the state-view read path was confirmed returning real slot0 and
+// liquidity for existing pools before being trusted.
+// ---------------------------------------------------------------------------
+
+export const uniswapV4 = {
+  poolManager: "0x8366a39cc670b4001a1121b8f6a443a643e40951" as `0x${string}`,
+  stateView: "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b" as `0x${string}`,
+  quoter: "0x8dc178efb8111bb0973dd9d722ebeff267c98f94" as `0x${string}`,
+  positionManager: "0x58daec3116aae6d93017baaea7749052e8a04fa7" as `0x${string}`,
+  // fee to tick-spacing pairs to probe, the standard uniswap combos.
+  feeTickSpacings: [
+    [500, 10],
+    [3000, 60],
+    [10000, 200],
+  ] as const,
+  // v4 represents native eth as the zero address, not weth.
+  nativeCurrency: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+  // fletch only tracks no-hook pools; the hook is the zero address.
+  hooks: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+} as const;
+
+// ---------------------------------------------------------------------------
 // quote assets. fair value is dollar denominated, so usdg-quoted pools are
 // preferred. a weth-quoted pool would need an eth/usd proxy to dollarize
 // (flagged by discovery, not wired in v1). addresses verified from
@@ -140,6 +177,9 @@ export const timing = {
 // ticker at a different address is a fake.
 // ---------------------------------------------------------------------------
 
+// which venue the selected pool lives in. the reader dispatches on this.
+export type PoolProtocol = "v2" | "v3" | "v4";
+
 export interface TokenConfig {
   id: number;
   symbol: string;
@@ -148,9 +188,13 @@ export interface TokenConfig {
   address: `0x${string}`;
   // which quote the selected pool uses. set by discovery.
   quote: QuoteSymbol;
-  // selected uniswap v3 pool. null until discovery fills it.
+  // which venue the pool lives in. set by discovery.
+  protocol: PoolProtocol;
+  // selected pool identifier: a pool/pair address for v2 and v3, or a v4 pool
+  // id (bytes32 keccak of the pool key) for v4. null until discovery fills it.
   pool: `0x${string}` | null;
-  // true when the stock token is token1 in the pool. set by discovery.
+  // true when the stock token is the higher-address side (token1 / currency1).
+  // set by discovery.
   invert: boolean;
   // erc20 decimals of the stock token.
   baseDecimals: number;
@@ -172,6 +216,7 @@ export const tokens: TokenConfig[] = [
     name: "tesla",
     address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
     quote: "usdg",
+    protocol: "v3",
     pool: "0xf4ACdAEEB7022862A763C9B1B885e11191c889E3",
     invert: false,
     baseDecimals: 18,
@@ -193,6 +238,7 @@ export const tokens: TokenConfig[] = [
     name: "apple",
     address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
     quote: "usdg",
+    protocol: "v3",
     pool: null,
     invert: false,
     baseDecimals: 18,
@@ -205,6 +251,7 @@ export const tokens: TokenConfig[] = [
     name: "nvidia",
     address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
     quote: "usdg",
+    protocol: "v3",
     pool: "0xB944cec30Bd4175855215D767ADC81F39e5f7E2B",
     invert: true,
     baseDecimals: 18,
@@ -220,6 +267,7 @@ export const tokens: TokenConfig[] = [
     name: "microsoft",
     address: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
     quote: "usdg",
+    protocol: "v3",
     pool: null,
     invert: false,
     baseDecimals: 18,
@@ -235,6 +283,7 @@ export const tokens: TokenConfig[] = [
     name: "amazon",
     address: "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
     quote: "usdg",
+    protocol: "v3",
     pool: null,
     invert: false,
     baseDecimals: 18,

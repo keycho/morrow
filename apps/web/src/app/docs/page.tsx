@@ -76,6 +76,34 @@ export default function DocsPage() {
         tool verify_observation also checks the chain over rpc.
       </p>
 
+      <h2>spreads and alerts</h2>
+      <p className="dim">
+        the <a href="/spreads">mispricings board</a> ranks tokens by the absolute spread between
+        the onchain pool price (multiplier-adjusted and dollarized) and fletch fair value,
+        refreshed live. a public telegram channel posts when a token&apos;s absolute spread crosses
+        a threshold, with hysteresis and a per-token cooldown so it does not spam on oscillation.
+        messages are data statements only, with an &quot;informational feed, not trading advice&quot;
+        footer. the alert bot is generation-gated by a dry-run flag until the operator wires the
+        channel.
+      </p>
+
+      <h2>chainlink, and what fletch is not</h2>
+      <p className="dim">
+        chainlink is robinhood chain&apos;s official oracle and feeds stock token prices. fletch
+        does not compete with that feed. fletch&apos;s product is the off-hours fair value blend
+        and the verifiable commit trail, a different object. do not frame fletch as a chainlink
+        replacement.
+      </p>
+
+      <h2>accuracy receipts</h2>
+      <p className="dim">
+        each week fletch scores its pre-open fair value against the actual next-open print, per
+        token, and publishes a card with the mean absolute error, the best call, and the cycles
+        committed on-chain. the <a href="/receipts">receipts</a> page lists them, newest first;
+        the api serves the markdown and a rendered png. receipts are generated only, never
+        auto-posted.
+      </p>
+
       <h2>api reference</h2>
       <table className="data">
         <thead>
@@ -114,8 +142,16 @@ export default function DocsPage() {
             <td className="dim">realized error vs actual next-open prints</td>
           </tr>
           <tr>
+            <td>GET /v1/spreads</td>
+            <td className="dim">onchain vs fair spread per token, sorted by divergence</td>
+          </tr>
+          <tr>
+            <td>GET /v1/receipts, /v1/receipts/:week</td>
+            <td className="dim">weekly accuracy cards; card.png for the rendered image</td>
+          </tr>
+          <tr>
             <td>GET /health</td>
-            <td className="dim">heartbeats, cycle age, per-source staleness</td>
+            <td className="dim">per-subsystem status, cycle age, per-source staleness</td>
           </tr>
         </tbody>
       </table>

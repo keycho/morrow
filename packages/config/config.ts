@@ -679,6 +679,22 @@ export const telegram = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// receipts. weekly accuracy cards (markdown + a rendered png). generated only,
+// never auto-posted. the worker generates last week's card on the configured
+// day after the open anchors land.
+// ---------------------------------------------------------------------------
+
+export const receipts = {
+  // when true, the indexer generates the weekly receipt on schedule.
+  autoGenerate: envBool("FLETCH_RECEIPTS_AUTO", true),
+  // day of week to generate on, in America/New_York (1 = monday).
+  generateWeekday: envNum("FLETCH_RECEIPTS_WEEKDAY", 1),
+  // minutes after the 09:30 et open to wait before generating, so the open
+  // anchors have landed.
+  generateAfterOpenMinutes: envNum("FLETCH_RECEIPTS_AFTER_OPEN_MIN", 30),
+} as const;
+
+// ---------------------------------------------------------------------------
 // shared copy. the disclaimer rides on every api response and the dashboard
 // footer. lowercase everywhere by design.
 // ---------------------------------------------------------------------------

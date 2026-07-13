@@ -106,6 +106,25 @@ export interface Subsystem {
   description: string;
 }
 
+export interface ReceiptSummaryToken {
+  symbol: string;
+  samples: number;
+  meanAbsErrorPct: number | null;
+  bestCall: { date: string; predicted: number; actual: number; errorPct: number } | null;
+}
+
+export interface ReceiptListItem {
+  weekStart: string;
+  weekEnd: string;
+  generatedAt: string;
+  hasPng: boolean;
+  summary: {
+    cyclesCommitted?: number;
+    latestCommitTx?: string | null;
+    tokens?: ReceiptSummaryToken[];
+  };
+}
+
 export interface HealthPayload {
   status: "ok" | "degraded" | "down";
   mockMode: boolean;

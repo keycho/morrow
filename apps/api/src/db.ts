@@ -270,6 +270,63 @@ export async function lastProxyTickPerSource(): Promise<{ source: string; ts: st
   return res.rows.map((row) => ({ source: String(row.source), ts: new Date(row.ts).toISOString() }));
 }
 
+// --- receipts ----------------------------------------------------------------
+
+export interface ReceiptListItem {
+  weekStart: string;
+  weekEnd: string;
+  generatedAt: string;
+  hasPng: boolean;
+  summary: Record<string, unknown>;
+}
+
+export async function listReceipts(limit: number): Promise<ReceiptListItem[]> {
+  const res = await db().query(
+    `select week_start, week_end, generated_at, (png_base64 is not null) as has_png, summary
+     from receipts order by week_start desc limit $1`,
+    [limit]
+  );
+  return res.rows.map((row) => ({
+    weekStart: new Date(row.week_start).toISOString().slice(0, 10),
+    weekEnd: new Date(row.week_end).toISOString().slice(0, 10),
+    generatedAt: new Date(row.generated_at).toISOString(),
+    hasPng: Boolean(row.has_png),
+    summary: (row.summary ?? {}) as Record<string, unknown>,
+  }));
+}
+
+export interface ReceiptDetail extends ReceiptListItem {
+  markdown: string;
+  svg: string;
+}
+
+export async function getReceipt(weekStart: string): Promise<ReceiptDetail | null> {
+  const res = await db().query(
+    `select week_start, week_end, generated_at, (png_base64 is not null) as has_png,
+            summary, markdown, svg
+     from receipts where week_start = $1`,
+    [weekStart]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+  return {
+    weekStart: new Date(row.week_start).toISOString().slice(0, 10),
+    weekEnd: new Date(row.week_end).toISOString().slice(0, 10),
+    generatedAt: new Date(row.generated_at).toISOString(),
+    hasPng: Boolean(row.has_png),
+    summary: (row.summary ?? {}) as Record<string, unknown>,
+    markdown: String(row.markdown),
+    svg: String(row.svg),
+  };
+}
+
+export async function getReceiptPng(weekStart: string): Promise<Buffer | null> {
+  const res = await db().query(`select png_base64 from receipts where week_start = $1`, [weekStart]);
+  const row = res.rows[0];
+  if (!row || row.png_base64 === null) return null;
+  return Buffer.from(String(row.png_base64), "base64");
+}
+
 // --- keys and admin ----------------------------------------------------------
 
 export async function keyTierByHash(keyHash: string): Promise<string | null> {

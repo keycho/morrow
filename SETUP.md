@@ -166,10 +166,20 @@ optional verification target: `https://robinhoodchain.blockscout.com/api/`.
 
 ## step 7. anchors (close and open prices)
 
-the model anchor is the last official close per token. v1 is manual by
-design (`anchors.automatedSource` in config.ts reserves the automated path).
+the model anchor is the last official close per token; the next-open print
+feeds accuracy. two ways to maintain them:
 
-set `ADMIN_TOKEN` in `.env`, boot the api, then per token:
+automated (recommended): fill `anchors.sources` in config.ts with a close url,
+open url (`{symbol}` is substituted), and json path per token, then set
+`FLETCH_ANCHOR_AUTOMATED=true`. the indexer inserts the close 15m after the
+16:00 et close (13:00 on half days) and the open 5m after 09:30, validates
+each against the previous anchor (a jump over 15% is rejected unless a
+corporate action explains it), and pages the ops channel on a rejection or a
+missed deadline. a missed close is surfaced as a stale-anchor cycle (confidence
+capped, band widened) so the feed does not go dark.
+
+manual (the override, always available): set `ADMIN_TOKEN` in `.env`, boot the
+api, then per token:
 
 ```
 curl -X POST "$API_URL/v1/admin/anchors" \
@@ -193,15 +203,26 @@ that happens.
 - build: `pnpm install --frozen-lockfile`
 - start: `pnpm --filter @fletch/indexer start`
 - env: `FLETCH_RPC_URL`, `FLETCH_COMMITS_ADDRESS`, `DATABASE_URL`,
-  `PUBLISHER_PRIVATE_KEY`, optionally `FLETCH_POLL_MS`,
-  `FLETCH_CYCLE_SECONDS`, `FLETCH_TWAP_WINDOW_SECONDS`
+  `PUBLISHER_PRIVATE_KEY`, `TELEGRAM_OPS_BOT_TOKEN`, `TELEGRAM_OPS_CHAT_ID`
+  (leave `TELEGRAM_OPS_DRY_RUN=true` until ready), `FLETCH_ANCHOR_AUTOMATED`,
+  optionally `FLETCH_POLL_MS`, `FLETCH_CYCLE_SECONDS`,
+  `FLETCH_TWAP_WINDOW_SECONDS`. the indexer also generates the weekly receipt
+  and pages the ops channel.
 
 8.2 api (public)
 - build: `pnpm install --frozen-lockfile`
 - start: `pnpm --filter @fletch/api start`
 - env: `DATABASE_URL`, `ADMIN_TOKEN`, `API_PORT` (or let it read railway's
   injected `PORT`), `API_CORS_ORIGIN` (your vercel domain),
-  `FLETCH_COMMITS_ADDRESS`, `FLETCH_EXPLORER_URL`, `X402_ENABLED` when ready
+  `FLETCH_COMMITS_ADDRESS`, `FLETCH_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`,
+  `TELEGRAM_OPS_CHAT_ID`, `X402_ENABLED` when ready
+
+8.3 public alert bot (worker, no public port, optional)
+- start: `pnpm --filter @fletch/telegram start`
+- env: `FLETCH_API_URL` (the api url), `FLETCH_PUBLIC_WEB_URL` (the vercel
+  domain), `TELEGRAM_PUBLIC_BOT_TOKEN`, `TELEGRAM_PUBLIC_CHAT_ID`,
+  `TELEGRAM_DRY_RUN=false` to go live, optionally `FLETCH_TG_THRESHOLD_PCT`.
+  dry-run (default) logs the messages so you can watch before wiring the token.
 
 ## step 9. deploy the dashboard to vercel
 
@@ -221,6 +242,26 @@ npm publish --access public
 users configure it with their `FLETCH_API_URL` (and `FLETCH_RPC_URL` for the
 on-chain check). see `packages/mcp/README.md` for the claude desktop snippet.
 
+## weekly receipts
+
+the indexer generates the weekly accuracy card automatically on the configured
+weekday (default monday) after the open anchors land, and stores it. to
+generate one by hand:
+
+```
+DATABASE_URL=... pnpm receipts          # generate last week's receipt
+DATABASE_URL=... pnpm receipts --force  # regenerate an existing week
+```
+
+the png is rasterized by `@resvg/resvg-js` (an optional native dep, no
+headless browser); if it is not installed the markdown and svg still generate
+and the png is omitted. receipts are generated only, never auto-posted; post
+the cards yourself from the `/receipts` page or `GET /v1/receipts`.
+
+## optional. publish the mcp package
+
+(unchanged; see `packages/mcp/README.md`.)
+
 ## optional. x402 pay-per-query
 
 the 402 path is live behind `X402_ENABLED=true`, but settlement is an
@@ -228,6 +269,23 @@ interface (`apps/api/src/x402.ts`, `PaymentVerifier`). before enabling, fill
 `api.x402.network` and `api.x402.payTo` in config.ts and swap
 `UnwiredVerifier` for your verifier. no token, treasury, or payout logic
 exists in this repo by design.
+
+## ops runbook
+
+each ops alert pages the private telegram channel with a stable key and a
+resolved notice when the condition clears. what each means and the first thing
+to check:
+
+| alert | what it means | first thing to check |
+| --- | --- | --- |
+| indexer heartbeat stale | no indexer heartbeat for over 3 cycles | is the indexer worker running on railway; check its logs and the db connection |
+| rpc failures | several consecutive ticks read no pools | is `FLETCH_RPC_URL` (alchemy/quicknode) up and not rate limited; check the provider dashboard |
+| publisher wallet low | gas balance below the floor, with a runway estimate | top up the publisher wallet with eth over the canonical bridge |
+| commit publish failed / tx reverted | a cycle commit did not confirm | check gas, the rpc, and `FLETCH_COMMITS_ADDRESS`; the reconcile pass retries automatically |
+| anchor rejected | an automated anchor jumped over the threshold with no corporate action | verify the print at the source; if it is a real split, the flag clears once a corporate_action cycle records; otherwise insert the correct anchor manually |
+| anchor missed deadline | an anchor is still missing hours after its target | check the anchor source url and json path; insert manually to unblock, the engine is running stale-anchor meanwhile |
+| api 5xx spike | the api returned many 5xx in the window | check the api logs and the db; likely a query or connection issue |
+| indexer/api crashed | an unhandled error took a worker down | read the crash message in the page and the worker logs; the process exits non-zero so railway restarts it |
 
 ## verify the deployment
 
@@ -241,6 +299,12 @@ exists in this repo by design.
   checked against the chain itself
 - after the first market open, insert the `open` anchors and check
   `GET $API_URL/v1/accuracy/tsla`
+- the `/spreads` board ranks the onchain-vs-fair divergences; the public
+  alert bot logs (dry-run) or posts when a spread crosses the threshold
+- `/health` shows every subsystem green; force a condition (stop the
+  indexer) and confirm the ops channel pages, then recovers
+- run `pnpm receipts` and check `/receipts` and
+  `GET $API_URL/v1/receipts/<week>/card.png`
 
 ## positioning
 

@@ -8,6 +8,7 @@
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json --noEmit",
     "discover-pools": "tsx scripts/discover-pools.ts",
+    "receipts": "pnpm --filter @fletch/receipts start",
     "dev:indexer": "pnpm --filter @fletch/indexer dev",
     "dev:api": "pnpm --filter @fletch/api dev",
     "dev:web": "pnpm --filter @fletch/web dev"

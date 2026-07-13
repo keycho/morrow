@@ -39,6 +39,7 @@ import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
 import { maybeRunCycle } from "./cycle.js";
 import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publisher.js";
 import { runAnchorScheduler } from "./anchors.js";
+import { maybeGenerateReceipt } from "./receipts.js";
 import { OpsAlerter, logTransport, makeTelegramTransport } from "@fletch/telegram/ops";
 import { ops, telegram } from "@fletch/config";
 import { log } from "./log.js";
@@ -209,6 +210,11 @@ async function tick(): Promise<void> {
   // publisher wallet gas runway: page when the balance drops below the floor.
   await checkPublisherBalance(alerter).catch((err) =>
     log.warn("publisher balance check failed", { message: String(err) })
+  );
+
+  // weekly accuracy receipt: generate on the configured day after the open.
+  await maybeGenerateReceipt(now).catch((err) =>
+    log.warn("receipt scheduler failed", { message: String(err) })
   );
 
   // every ~10 ticks, retry anything unconfirmed

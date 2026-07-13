@@ -338,7 +338,8 @@ export const anchors = {
 // ---------------------------------------------------------------------------
 
 export const api = {
-  port: envNum("API_PORT", 8080),
+  // railway injects PORT; API_PORT wins when both are set.
+  port: envNum("API_PORT", envNum("PORT", 8080)),
   host: env("API_HOST", "0.0.0.0"),
   corsOrigin: env("API_CORS_ORIGIN", "*"),
   rateLimit: {

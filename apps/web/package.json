@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "echo dashboard has no unit tests; engine owns the math",
+    "test": "echo 'dashboard has no unit tests. engine owns the math.'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

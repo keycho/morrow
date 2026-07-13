@@ -22,8 +22,14 @@
 // such tokens and they are excluded from the usdg launch set.
 
 import { createPublicClient, http, parseAbi, type PublicClient } from "viem";
-import { chain, tokens, type TokenConfig } from "@fletch/config";
-import { decodeUiMultiplier, effectivePerSharePrice } from "@fletch/engine";
+import { chain, dollarization, tokens, type TokenConfig } from "@fletch/config";
+import {
+  decodeUiMultiplier,
+  dollarize,
+  effectivePerSharePrice,
+  ethUsdUsable,
+  type EthUsdTick,
+} from "@fletch/engine";
 import { log } from "./log.js";
 import { backoffDelayMs, sleep } from "./breaker.js";
 
@@ -55,16 +61,31 @@ export interface PoolReading {
   token: TokenConfig;
   blockNumber: bigint;
   ts: Date;
-  // effective per-share price (raw pool price / ui multiplier).
+  // effective per-share price in usd (raw pool price / ui multiplier, and for
+  // weth-quoted pools multiplied by the eth/usd rate).
   spot: number;
-  // raw per-token pool price before the ui multiplier, kept for logging.
+  // raw per-token pool price before the ui multiplier, in quote units
+  // (usd for usdg pools, eth for weth pools). kept for logging.
   rawSpot: number;
+  // ±2% depth in usd.
   depthQuote2pct: number;
   volumeDeltaQuote: number;
   // ui multiplier in force, m = uiMultiplier / 1e18.
   uiMultiplier: number;
   // true when the token does not expose uiMultiplier().
   uiMultiplierMissing: boolean;
+  // eth/usd rate used to dollarize a weth pool, or null for usdg pools.
+  ethUsdRate: number | null;
+}
+
+// thrown when a weth-quoted pool cannot be dollarized because the eth/usd
+// rate is stale or missing. the caller skips the token (no observation), so
+// confidence degrades instead of a wrong price being published.
+export class EthUsdUnavailableError extends Error {
+  constructor(symbol: string) {
+    super(`eth/usd rate stale or missing; skipping weth-quoted ${symbol}`);
+    this.name = "EthUsdUnavailableError";
+  }
 }
 
 // raw v3 price is token1-per-token0 in raw units: (sqrtPriceX96 / 2^96)^2.
@@ -134,10 +155,15 @@ async function volumeDeltaQuote(
   }
 }
 
-export async function readPool(t: TokenConfig): Promise<PoolReading> {
+export async function readPool(t: TokenConfig, ethUsd: EthUsdTick | null): Promise<PoolReading> {
   const pool = t.pool;
   if (pool === null) {
     throw new Error(`pool for ${t.symbol} is not discovered yet (run pnpm discover-pools)`);
+  }
+  const isWeth = t.quote === "weth";
+  if (isWeth && !ethUsdUsable(ethUsd, Date.now(), dollarization.stalenessMs)) {
+    // never dollarize with a stale rate; the caller treats this as a skip.
+    throw new EthUsdUnavailableError(t.symbol);
   }
   let lastError: unknown;
   for (let attempt = 0; attempt <= 3; attempt++) {
@@ -168,9 +194,21 @@ export async function readPool(t: TokenConfig): Promise<PoolReading> {
       const { multiplier, missing } = decodeUiMultiplier(rawMultiplier);
 
       const rawSpot = spotFromSqrtPrice(sqrtPriceX96, t);
-      const spot = effectivePerSharePrice(rawSpot, multiplier);
-      const depth = depthQuote2pct(sqrtPriceX96, liquidity, t);
+      // per-share price in quote units (usd for usdg, eth for weth)
+      const perShareQuote = effectivePerSharePrice(rawSpot, multiplier);
+      const depthQuote = depthQuote2pct(sqrtPriceX96, liquidity, t);
       const volume = await volumeDeltaQuote(t, pool, block.number);
+
+      // dollarize weth-quoted pools. usability was checked before the loop.
+      let spot = perShareQuote;
+      let depth = depthQuote;
+      let ethUsdRate: number | null = null;
+      if (isWeth) {
+        const rate = ethUsd!.rate;
+        ethUsdRate = rate;
+        spot = dollarize(perShareQuote, rate);
+        depth = dollarize(depthQuote, rate);
+      }
 
       return {
         token: t,
@@ -182,6 +220,7 @@ export async function readPool(t: TokenConfig): Promise<PoolReading> {
         volumeDeltaQuote: volume,
         uiMultiplier: multiplier,
         uiMultiplierMissing: missing,
+        ethUsdRate,
       };
     } catch (err) {
       lastError = err;

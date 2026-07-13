@@ -47,11 +47,19 @@ interface DiscoveredPool {
   fee: number;
   pool: Hex;
   invert: boolean;
+  // price per share in quote units (usd for usdg, eth for weth).
   perSharePrice: number;
+  // price per share in usd. equals perSharePrice for usdg pools; for weth
+  // pools it is the eth price times ETH_USD when that env override is set,
+  // otherwise null (not dollarizable at discovery time).
+  perShareUsd: number | null;
   quoteDecimals: number;
   baseDecimals: number;
   liquidity: bigint;
+  // ±2% depth in quote units.
   depthQuote: number;
+  // ±2% depth in usd, or null for weth pools without ETH_USD set.
+  depthUsd: number | null;
   uiMultiplier: number;
   uiMultiplierMissing: boolean;
 }
@@ -83,7 +91,7 @@ function priceAndDepth(
   return { rawPrice, perShare, depthQuote: depthRaw / 10 ** quoteDec };
 }
 
-async function discover(client: PublicClient): Promise<DiscoveredPool[]> {
+async function discover(client: PublicClient, ethUsd: number | null): Promise<DiscoveredPool[]> {
   const quoteList: QuoteSymbol[] = ["usdg", "weth"];
 
   // step 1: getPool for every token x quote x fee.
@@ -182,6 +190,10 @@ async function discover(client: PublicClient): Promise<DiscoveredPool[]> {
       multiplier
     );
 
+    const isWeth = e.quote === "weth";
+    const perShareUsd = isWeth ? (ethUsd !== null ? perShare * ethUsd : null) : perShare;
+    const depthUsd = isWeth ? (ethUsd !== null ? depthQuote * ethUsd : null) : depthQuote;
+
     out.push({
       token: e.token,
       quote: e.quote,
@@ -189,10 +201,12 @@ async function discover(client: PublicClient): Promise<DiscoveredPool[]> {
       pool: e.pool,
       invert,
       perSharePrice: perShare,
+      perShareUsd,
       quoteDecimals: quoteDec,
       baseDecimals: stockDec,
       liquidity,
       depthQuote,
+      depthUsd,
       uiMultiplier: multiplier,
       uiMultiplierMissing: missing,
     });
@@ -234,14 +248,18 @@ function printTable(pools: DiscoveredPool[]): void {
       pad("fee", 7) +
       pad("pool", 14) +
       pad("invert", 8) +
-      pad("price/share", 14) +
-      pad("~depth (quote)", 16) +
+      pad("price/share usd", 17) +
+      pad("~depth usd", 14) +
       "liquidity"
   );
   const sorted = [...pools].sort(
     (a, b) => a.token.id - b.token.id || a.quote.localeCompare(b.quote) || a.fee - b.fee
   );
   for (const p of sorted) {
+    // weth pools show usd when ETH_USD is set, else the eth figure marked.
+    const priceCell =
+      p.perShareUsd !== null ? fmtNum(p.perShareUsd) : `${fmtNum(p.perSharePrice)} eth`;
+    const depthCell = p.depthUsd !== null ? fmtNum(p.depthUsd) : `${fmtNum(p.depthQuote)} eth`;
     console.log(
       "  " +
         pad(p.token.symbol, 7) +
@@ -249,8 +267,8 @@ function printTable(pools: DiscoveredPool[]): void {
         pad(String(p.fee), 7) +
         pad(p.pool.slice(0, 10) + "..", 14) +
         pad(p.invert ? "true" : "false", 8) +
-        pad(fmtNum(p.perSharePrice), 14) +
-        pad(fmtNum(p.depthQuote), 16) +
+        pad(priceCell, 17) +
+        pad(depthCell, 14) +
         p.liquidity.toString()
     );
     if (p.uiMultiplierMissing) {
@@ -328,10 +346,20 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // optional eth/usd override to dollarize weth pool prices for display and
+  // judgement, e.g. ETH_USD=3500 pnpm discover-pools
+  const ethUsdRaw = process.env.ETH_USD;
+  const ethUsd = ethUsdRaw && Number.isFinite(Number(ethUsdRaw)) ? Number(ethUsdRaw) : null;
+
   console.log(`fletch pool discovery against ${rpcUrl.replace(/\/\/.*@/, "//")}`);
+  if (ethUsd !== null) {
+    console.log(`dollarizing weth pools at eth/usd = ${ethUsd}`);
+  } else {
+    console.log("no ETH_USD set; weth pool prices shown in eth. set ETH_USD to dollarize.");
+  }
   const client = createPublicClient({ transport: http(rpcUrl, { timeout: 20_000, retryCount: 3 }) });
 
-  const pools = await discover(client);
+  const pools = await discover(client, ethUsd);
   if (pools.length === 0) {
     console.log("");
     console.log("no pools found for any launch token across usdg/weth and the 500/3000/10000");

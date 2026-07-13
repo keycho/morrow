@@ -3,9 +3,18 @@
 // placeholder in config.ts is filled. deterministic per process via a seeded
 // lcg so replays look stable.
 
-import { tokens, proxySources, type TokenConfig } from "@fletch/config";
+import {
+  activeFetchSources,
+  tokens,
+  wethTokensPresent,
+  type TokenConfig,
+} from "@fletch/config";
 import type { PoolReading } from "./pools.js";
 import type { ProxyFetchResult } from "./proxies.js";
+
+// synthetic eth/usd rate for mock mode, used only when a weth token is
+// tracked so the dollarization source shows fresh.
+const MOCK_ETH_USD = 3_500;
 
 // small lcg. not crypto, just repeatable wiggle.
 function makeRng(seed: number): () => number {
@@ -61,11 +70,16 @@ export function mockPoolReading(t: TokenConfig): PoolReading {
     volumeDeltaQuote: s.rng() * 50_000,
     uiMultiplier: 1,
     uiMultiplierMissing: false,
+    // mock spots are already in usd; no dollarization is applied.
+    ethUsdRate: wethTokensPresent() ? MOCK_ETH_USD : null,
   };
 }
 
 export function mockProxyResults(): ProxyFetchResult[] {
-  return proxySources.map((source) => {
+  return activeFetchSources().map((source) => {
+    if (source.symbol === "ethusd") {
+      return { source, ok: true, value: MOCK_ETH_USD, latencyMs: 20, skippedByBreaker: false };
+    }
     const token = tokens.find((t) => t.symbol === source.symbol);
     const s = token ? stateFor(token) : undefined;
     const base = s ? s.price : 100;

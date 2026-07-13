@@ -3,7 +3,7 @@
 // with exponential backoff, staleness flags, and a circuit breaker. one bad
 // source never blocks the others.
 
-import { proxySources, type ProxySourceConfig } from "@fletch/config";
+import { activeFetchSources, type ProxySourceConfig } from "@fletch/config";
 import { CircuitBreaker, backoffDelayMs, sleep } from "./breaker.js";
 import { log } from "./log.js";
 
@@ -108,7 +108,7 @@ export async function fetchProxy(source: ProxySourceConfig): Promise<ProxyFetchR
 }
 
 export async function fetchAllProxies(): Promise<ProxyFetchResult[]> {
-  return Promise.all(proxySources.map((s) => fetchProxy(s)));
+  return Promise.all(activeFetchSources().map((s) => fetchProxy(s)));
 }
 
 // per-source status for the heartbeat detail payload.
@@ -120,7 +120,7 @@ export function recordSuccess(name: string, at: number): void {
 
 export function proxyStatusSnapshot(now: number): Record<string, unknown> {
   const status: Record<string, unknown> = {};
-  for (const s of proxySources) {
+  for (const s of activeFetchSources()) {
     const b = breakerFor(s.name).snapshot();
     const last = lastSuccessAt.get(s.name);
     status[s.name] = {

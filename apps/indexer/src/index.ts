@@ -14,12 +14,13 @@
 // crashes the worker; everything retries with backoff on later ticks and the
 // commit reconcile pass re-sends anything unconfirmed.
 
-import { assertConfigReady, mockMode, timing } from "@fletch/config";
-import { lastCloseTime } from "@fletch/engine";
+import { assertConfigReady, dollarization, mockMode, timing, wethTokensPresent } from "@fletch/config";
+import { lastCloseTime, type EthUsdTick } from "@fletch/engine";
 import {
   closePool,
   insertObservations,
   insertProxyTicks,
+  latestProxyTick,
   pruneOldHeartbeats,
   seedMockAnchors,
   upsertTokensFromConfig,
@@ -27,7 +28,7 @@ import {
   type ObservationRow,
   type ProxyTickRow,
 } from "./db.js";
-import { readPool, trackedTokens, type PoolReading } from "./pools.js";
+import { EthUsdUnavailableError, readPool, trackedTokens, type PoolReading } from "./pools.js";
 import {
   fetchAllProxies,
   proxyStatusSnapshot,
@@ -44,9 +45,12 @@ let lastPrunedDay = "";
 let lastCycleId: number | null = null;
 let ticksSinceReconcile = 0;
 
-async function collectPools(): Promise<{ readings: PoolReading[]; errors: string[] }> {
+async function collectPools(
+  ethUsd: EthUsdTick | null
+): Promise<{ readings: PoolReading[]; errors: string[]; skipped: string[] }> {
   const readings: PoolReading[] = [];
   const errors: string[] = [];
+  const skipped: string[] = [];
   for (const token of trackedTokens()) {
     if (mockMode) {
       readings.push(mockPoolReading(token));
@@ -59,14 +63,21 @@ async function collectPools(): Promise<{ readings: PoolReading[]; errors: string
       continue;
     }
     try {
-      readings.push(await readPool(token));
+      readings.push(await readPool(token, ethUsd));
     } catch (err) {
+      if (err instanceof EthUsdUnavailableError) {
+        // stale eth/usd: skip this weth token rather than dollarize wrong.
+        // no observation is stored, so the engine degrades confidence.
+        skipped.push(`${token.symbol}: eth/usd stale`);
+        log.warn("skipping weth token, eth/usd stale", { token: token.symbol });
+        continue;
+      }
       const message = err instanceof Error ? err.message : String(err);
       errors.push(`${token.symbol}: ${message}`);
       log.error("pool read failed", { token: token.symbol, message });
     }
   }
-  return { readings, errors };
+  return { readings, errors, skipped };
 }
 
 async function collectProxies(): Promise<ProxyFetchResult[]> {
@@ -74,10 +85,26 @@ async function collectProxies(): Promise<ProxyFetchResult[]> {
   return fetchAllProxies();
 }
 
+// resolve the eth/usd rate for dollarizing weth pools: prefer the value
+// fetched this tick, else fall back to the most recent stored tick (the
+// staleness gate in the reader decides whether it is still usable).
+async function resolveEthUsd(proxyResults: ProxyFetchResult[]): Promise<EthUsdTick | null> {
+  if (!wethTokensPresent()) return null;
+  const fresh = proxyResults.find((r) => r.source.name === dollarization.ethUsdSource.name);
+  if (fresh?.ok && fresh.value !== undefined) {
+    return { rate: fresh.value, tsMs: Date.now() };
+  }
+  const latest = await latestProxyTick(dollarization.ethUsdSource.name);
+  if (latest) return { rate: latest.value, tsMs: latest.ts.getTime() };
+  return null;
+}
+
 async function tick(): Promise<void> {
   const startedAt = Date.now();
-  const { readings, errors } = await collectPools();
+  // proxies first: the eth/usd rate is needed to dollarize weth pools.
   const proxyResults = await collectProxies();
+  const ethUsd = await resolveEthUsd(proxyResults);
+  const { readings, errors, skipped } = await collectPools(ethUsd);
 
   const observationRows: ObservationRow[] = readings.map((r) => ({
     tokenId: r.token.id,
@@ -136,7 +163,7 @@ async function tick(): Promise<void> {
   const detail = {
     tickMs: Date.now() - startedAt,
     lastCycleId,
-    pools: { ok: readings.length, failed: errors, mock: mockMode },
+    pools: { ok: readings.length, failed: errors, skipped, mock: mockMode },
     proxies: {
       ok: proxyRows.length,
       failed: failedProxies,
@@ -158,6 +185,7 @@ async function tick(): Promise<void> {
   log.info("tick complete", {
     pools: readings.length,
     poolErrors: errors.length,
+    poolSkipped: skipped.length,
     proxyOk: proxyRows.length,
     proxyFailed: failedProxies.length,
     ms: Date.now() - startedAt,

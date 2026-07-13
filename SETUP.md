@@ -105,9 +105,21 @@ config:
 
 - tsla: usdg pool 0xf4ACdAEE.., fee 3000, filled. thin (near-zero depth).
 - nvda: usdg pool 0xB944cec3.., fee 3000, invert true, filled. has depth.
-- aapl: only a weth pool (0x8bb3514e..). left null; needs eth/usd
-  dollarization, not wired in v1.
+- aapl: only a weth pool (0x8bb3514e..), and it is empty (zero liquidity,
+  implausible ~600 usd/share at eth/usd 3500 vs an aapl real of ~230).
+  dollarization is wired (see below), but this pool is not a real market,
+  so aapl is left null and excluded.
 - msft, amzn: no v3 pool on usdg or weth. left null, excluded.
+
+weth-quoted pools and dollarization: a weth pool prices a stock in eth, not
+dollars. the reader dollarizes weth pools by multiplying price and depth by
+an eth/usd rate (`dollarization.ethUsdSource` in config, fetched alongside
+the proxies and gated by `FLETCH_ETHUSD_STALENESS_MS`). a stale eth/usd rate
+skips the weth token for that tick, which degrades confidence rather than
+publishing a wrong price. to enable a real weth token later: set its `quote`
+to "weth", fill pool/invert/quoteDecimals from discovery (run with
+`ETH_USD=<rate>` to see dollarized prices), and set `FLETCH_ETHUSD_URL` and
+`FLETCH_ETHUSD_JSONPATH`. none of the current launch tokens need this.
 
 re-run discovery against your own production rpc before launch; pools and
 liquidity evolve. then either fill the remaining tokens or remove them from

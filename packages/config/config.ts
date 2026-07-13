@@ -179,11 +179,15 @@ export const tokens: TokenConfig[] = [
     proxies: ["PROXY_TSLA_A"],
   },
   {
-    // no usdg pool as of discovery. a weth pool exists
-    // (0x8bb3514e2204E1cDF3Ac149EFEe7Ff04D91B719f) but a weth quote needs an
-    // eth/usd proxy to dollarize before the engine can track it, which is not
-    // wired in v1. left null until a usdg pool appears or dollarization is
-    // added. remove aapl from the launch set to boot live without it.
+    // no usdg pool. the only aapl pool is weth
+    // (0x8bb3514e2204E1cDF3Ac149EFEe7Ff04D91B719f) and dollarization is now
+    // wired, but that pool is empty: zero liquidity and an implausible price
+    // (~600 usd/share at eth/usd 3500 vs an aapl real of ~230), i.e. an
+    // uninitialized market, not a tradeable one. left null and excluded until
+    // a real pool exists. to enable a genuine weth pool later: set quote to
+    // "weth", fill pool/invert/quoteDecimals from discovery, and wire the
+    // eth/usd source (dollarization.ethUsdSource). remove aapl from the launch
+    // set to boot live without it.
     id: 2,
     symbol: "aapl",
     name: "apple",
@@ -337,6 +341,34 @@ export const proxySources: ProxySourceConfig[] = [
     stalenessMs: 180_000,
   },
 ];
+
+// ---------------------------------------------------------------------------
+// dollarization. a weth-quoted pool prices a stock token in eth, not dollars.
+// fair value is dollar denominated, so a weth pool's price and depth are
+// multiplied by this eth/usd source before use. the source is fetched
+// alongside the proxies and stored in proxy_ticks. a stale eth/usd rate must
+// never produce a published price: the reader skips a weth token when the
+// rate is stale, which degrades confidence rather than dollarizing wrong.
+//
+// the eth/usd source is only fetched when a tracked token is weth-quoted. the
+// operator wires the real endpoint (url and json path, overridable by env).
+// ---------------------------------------------------------------------------
+
+export const dollarization = {
+  // a weth token whose eth/usd tick is older than this is skipped for the
+  // tick (no observation stored), degrading confidence.
+  stalenessMs: envNum("FLETCH_ETHUSD_STALENESS_MS", 180_000),
+  ethUsdSource: {
+    name: "PROXY_ETHUSD",
+    symbol: "ethusd",
+    url: env("FLETCH_ETHUSD_URL", "https://PROXY_SOURCE_URL_ETHUSD"),
+    jsonPath: env("FLETCH_ETHUSD_JSONPATH", "REPLACE.WITH.PATH"),
+    weight: 1,
+    timeoutMs: 5_000,
+    retries: 2,
+    stalenessMs: envNum("FLETCH_ETHUSD_STALENESS_MS", 180_000),
+  } as ProxySourceConfig,
+} as const;
 
 // circuit breaker for proxy sources and the rpc.
 export const circuitBreaker = {
@@ -517,6 +549,18 @@ export function proxiesForToken(symbol: string): ProxySourceConfig[] {
   const token = tokenBySymbol(symbol);
   if (!token) return [];
   return proxySources.filter((p) => token.proxies.includes(p.name));
+}
+
+// true when any tracked token is priced in a weth pool and therefore needs
+// the eth/usd source to dollarize.
+export function wethTokensPresent(): boolean {
+  return tokens.some((t) => t.quote === "weth");
+}
+
+// the sources the indexer fetches each tick: the per-token proxies, plus the
+// eth/usd source when a weth-quoted token is tracked.
+export function activeFetchSources(): ProxySourceConfig[] {
+  return wethTokensPresent() ? [...proxySources, dollarization.ethUsdSource] : [...proxySources];
 }
 
 export function quoteAssetFor(token: TokenConfig): (typeof quoteAssets)[QuoteSymbol] {

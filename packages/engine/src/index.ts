@@ -46,6 +46,8 @@ export {
   multipliersDiffer,
 } from "./scaledui.js";
 
+export { type EthUsdTick, ethUsdUsable, dollarize } from "./dollarize.js";
+
 export {
   type LeafInput,
   type MerkleTree,

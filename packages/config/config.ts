@@ -241,7 +241,7 @@ export const tokens: TokenConfig[] = [
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_TSLA_A"],
+    proxies: ["PROXY_NQ", "PROXY_ES", "PROXY_ETH"],
   },
   {
     // real v4 usdg pool, depth ~6500 usd. price ~319 usd/share is ~7% above
@@ -258,7 +258,7 @@ export const tokens: TokenConfig[] = [
     invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_AAPL_A"],
+    proxies: ["PROXY_NQ", "PROXY_ES", "PROXY_ETH"],
   },
   {
     id: 3,
@@ -271,7 +271,7 @@ export const tokens: TokenConfig[] = [
     invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_NVDA_A"],
+    proxies: ["PROXY_NQ", "PROXY_ES", "PROXY_ETH"],
   },
   // ids 4 (msft) and 5 (amzn) are retired: no usable pool at discovery, so they
   // are not tracked. their addresses live in availableStockTokens for weekly
@@ -289,7 +289,7 @@ export const tokens: TokenConfig[] = [
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_GOOGL_A"],
+    proxies: ["PROXY_NQ", "PROXY_ES", "PROXY_ETH"],
   },
   {
     // real v4 usdg pool, depth ~1770 usd, price ~661. promoted from
@@ -304,7 +304,7 @@ export const tokens: TokenConfig[] = [
     invert: true,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_META_A"],
+    proxies: ["PROXY_NQ", "PROXY_ES", "PROXY_ETH"],
   },
   {
     // real v4 usdg pool, depth ~1290 usd, price ~743. spy is the s&p 500 etf;
@@ -319,7 +319,7 @@ export const tokens: TokenConfig[] = [
     invert: false,
     baseDecimals: 18,
     quoteDecimals: 6,
-    proxies: ["PROXY_SPY_A"],
+    proxies: ["PROXY_ES", "PROXY_ETH"],
   },
 ];
 
@@ -497,68 +497,50 @@ export interface ProxySourceConfig {
   stalenessMs: number;
 }
 
+// three shared 24/7 signals drive the off-hours drift, blended per token by
+// the weights below and by which token references which (see tokens[].proxies).
+// source: yahoo finance v8 chart (keyless, clean json, covers index futures
+// and crypto). finnhub was checked but does not serve futures or index quotes
+// on the free tier ("market data subscription required for cfd indices"), so
+// it stays the anchor source only. the drift is the return of each signal
+// since the last official close (see engine blendedDrift), so these give
+// direction while the us market is shut:
+//   PROXY_ES  s&p 500 e-mini futures  -> broad market direction (~23h/day)
+//   PROXY_NQ  nasdaq 100 e-mini futures -> tech direction (weighted up for the
+//             tech names, which reference it; spy does not)
+//   PROXY_ETH ethereum spot            -> risk-on/off, light weight, true 24/7
 export const proxySources: ProxySourceConfig[] = [
-  // PLACEHOLDER: replace url and jsonPath per source. add or remove sources
-  // freely. multiple sources per token are blended by weight.
   {
-    name: "PROXY_TSLA_A",
-    symbol: "tsla",
-    url: "https://PROXY_SOURCE_URL_TSLA_A",
-    jsonPath: "REPLACE.WITH.PATH",
+    name: "PROXY_ES",
+    symbol: "es",
+    url: "https://query1.finance.yahoo.com/v8/finance/chart/ES=F?range=5d&interval=1d",
+    jsonPath: "chart.result.0.meta.regularMarketPrice",
     weight: 1,
-    timeoutMs: 5_000,
+    timeoutMs: 6_000,
     retries: 2,
-    stalenessMs: 180_000,
+    // futures pause ~1h/day and over the weekend; a value older than this is
+    // dropped from the blend rather than trusted stale.
+    stalenessMs: 900_000,
   },
   {
-    name: "PROXY_AAPL_A",
-    symbol: "aapl",
-    url: "https://PROXY_SOURCE_URL_AAPL_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
+    name: "PROXY_NQ",
+    symbol: "nq",
+    url: "https://query1.finance.yahoo.com/v8/finance/chart/NQ=F?range=5d&interval=1d",
+    jsonPath: "chart.result.0.meta.regularMarketPrice",
+    weight: 1.5,
+    timeoutMs: 6_000,
     retries: 2,
-    stalenessMs: 180_000,
+    stalenessMs: 900_000,
   },
   {
-    name: "PROXY_NVDA_A",
-    symbol: "nvda",
-    url: "https://PROXY_SOURCE_URL_NVDA_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
+    name: "PROXY_ETH",
+    symbol: "eth",
+    url: "https://query1.finance.yahoo.com/v8/finance/chart/ETH-USD?range=5d&interval=1d",
+    jsonPath: "chart.result.0.meta.regularMarketPrice",
+    weight: 0.25,
+    timeoutMs: 6_000,
     retries: 2,
-    stalenessMs: 180_000,
-  },
-  {
-    name: "PROXY_GOOGL_A",
-    symbol: "googl",
-    url: "https://PROXY_SOURCE_URL_GOOGL_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
-    retries: 2,
-    stalenessMs: 180_000,
-  },
-  {
-    name: "PROXY_META_A",
-    symbol: "meta",
-    url: "https://PROXY_SOURCE_URL_META_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
-    retries: 2,
-    stalenessMs: 180_000,
-  },
-  {
-    name: "PROXY_SPY_A",
-    symbol: "spy",
-    url: "https://PROXY_SOURCE_URL_SPY_A",
-    jsonPath: "REPLACE.WITH.PATH",
-    weight: 1,
-    timeoutMs: 5_000,
-    retries: 2,
-    stalenessMs: 180_000,
+    stalenessMs: 900_000,
   },
 ];
 

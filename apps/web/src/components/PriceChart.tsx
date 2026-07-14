@@ -57,33 +57,39 @@ export function PriceChart({ rows }: { rows: FairValue[] }) {
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ border: "1px solid var(--border)", background: "var(--panel-2)" }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        style={{ border: "1px solid var(--hairline)", background: "var(--surface)" }}
+      >
         {gridVals.map((v) => (
           <g key={v}>
-            <line x1={PAD_L} y1={y(v)} x2={W - PAD_R} y2={y(v)} stroke="var(--border)" strokeWidth="1" />
-            <text x={PAD_L - 6} y={y(v) + 4} textAnchor="end" fontSize="10" fill="var(--dim)">
+            <line x1={PAD_L} y1={y(v)} x2={W - PAD_R} y2={y(v)} stroke="var(--hairline-soft)" strokeWidth="1" />
+            <text x={PAD_L - 6} y={y(v) + 4} textAnchor="end" fontSize="10" fill="var(--text-dim)">
               {fmtPrice(v)}
             </text>
           </g>
         ))}
-        <path d={bandPath} fill="rgba(74, 222, 128, 0.08)" stroke="none" />
-        {spotLine && <path d={spotLine} fill="none" stroke="var(--cyan)" strokeWidth="1" strokeDasharray="3 3" />}
-        <path d={fairLine} fill="none" stroke="var(--green)" strokeWidth="1.5" />
+        <path d={bandPath} fill="rgba(56, 68, 13, 0.12)" stroke="none" />
+        {spotLine && (
+          <path d={spotLine} fill="none" stroke="var(--ink)" strokeWidth="1" strokeDasharray="3 3" />
+        )}
+        <path d={fairLine} fill="none" stroke="var(--forest)" strokeWidth="1.5" />
         {suspects.map((r) => (
-          <circle key={r.cycleId} cx={x(r.ts)} cy={y(r.fairValue)} r="3" fill="var(--red)" />
+          <circle key={r.cycleId} cx={x(r.ts)} cy={y(r.fairValue)} r="3" fill="var(--ink)" />
         ))}
-        <text x={PAD_L} y={H - 8} fontSize="10" fill="var(--dim)">
+        <text x={PAD_L} y={H - 8} fontSize="10" fill="var(--text-dim)">
           {new Date(rows[0]!.ts).toISOString().slice(0, 16).replace("T", " ")}
         </text>
-        <text x={W - PAD_R} y={H - 8} textAnchor="end" fontSize="10" fill="var(--dim)">
+        <text x={W - PAD_R} y={H - 8} textAnchor="end" fontSize="10" fill="var(--text-dim)">
           {new Date(rows[rows.length - 1]!.ts).toISOString().slice(0, 16).replace("T", " ")}
         </text>
       </svg>
-      <div className="dim" style={{ marginTop: 6 }}>
-        <span className="green">--</span> fair value &nbsp;
-        <span style={{ color: "rgba(74, 222, 128, 0.5)" }}>&#9618;</span> confidence band &nbsp;
-        <span className="cyan">- -</span> onchain spot &nbsp;
-        <span className="red">o</span> suspect
+      <div className="dim" style={{ marginTop: 6, fontSize: 11 }}>
+        <span className="pos">▬</span> fair value &nbsp;
+        <span style={{ color: "rgba(56, 68, 13, 0.4)" }}>&#9618;</span> confidence band &nbsp;
+        <span style={{ color: "var(--ink)" }}>- -</span> pool spot &nbsp;
+        <span style={{ color: "var(--ink)" }}>o</span> suspect
       </div>
     </div>
   );

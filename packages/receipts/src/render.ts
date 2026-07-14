@@ -1,7 +1,8 @@
 // receipt rendering. pure. turns ReceiptData into a markdown summary and an
-// svg card in the morrow terminal aesthetic (dark, monospace, arrow mark).
-// the svg is rasterized to png separately; keeping it a plain string here
-// makes rendering testable without any image dependency.
+// svg card in the morrow instrument aesthetic (warm putty ground, ink text,
+// one forest accent, hard edges, an offset hard shadow). the svg is rasterized
+// to png separately; keeping it a plain string here makes rendering testable
+// without any image dependency.
 
 import type { ReceiptData, TokenReceipt } from "./types.js";
 
@@ -62,65 +63,84 @@ function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// morrow instrument palette (mirrors the web design tokens): warm putty ground,
+// ink text, one forest accent, hard edges, an offset hard shadow. no gradients.
 const COL = {
-  bg: "#0b0e11",
-  panel: "#10151b",
-  border: "#1d2733",
-  text: "#c9d1d9",
-  dim: "#7d8894",
-  green: "#4ade80",
-  cyan: "#67e8f9",
-  amber: "#fbbf24",
+  ground: "#d7d1c2",
+  surface: "#efeadd",
+  band: "#ded8ca",
+  ink: "#26231c",
+  body: "#514b3f",
+  dim: "#6f695b",
+  faint: "#8a836f",
+  hairline: "#bdb6a4",
+  forest: "#38440d",
+  forestItalic: "#56610f",
 };
+
+const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
+const SERIF = "Georgia, 'Times New Roman', serif";
 
 function tokenRowSvg(t: TokenReceipt, y: number): string {
   const err = fmtAbsPct(t.meanAbsErrorPct);
   const best = t.bestCall ? `${fmtAbsPct(Math.abs(t.bestCall.errorPct))} ${t.bestCall.date}` : "-";
   const errColor =
     t.meanAbsErrorPct === null
-      ? COL.dim
+      ? COL.faint
       : t.meanAbsErrorPct < 0.5
-        ? COL.green
+        ? COL.forest
         : t.meanAbsErrorPct < 1.5
-          ? COL.amber
-          : COL.text;
+          ? COL.forestItalic
+          : COL.ink;
   return [
-    `<text x="40" y="${y}" fill="${COL.text}" font-weight="bold">${esc(t.symbol)}</text>`,
-    `<text x="150" y="${y}" fill="${COL.dim}" text-anchor="end">${t.samples}</text>`,
-    `<text x="330" y="${y}" fill="${errColor}" text-anchor="end">${esc(err)}</text>`,
-    `<text x="360" y="${y}" fill="${COL.cyan}">${esc(best)}</text>`,
+    `<text x="46" y="${y}" fill="${COL.ink}" font-weight="600">${esc(t.symbol)}</text>`,
+    `<text x="200" y="${y}" fill="${COL.dim}" text-anchor="end">${t.samples}</text>`,
+    `<text x="392" y="${y}" fill="${errColor}" text-anchor="end" font-weight="600">${esc(err)}</text>`,
+    `<text x="430" y="${y}" fill="${COL.body}">${esc(best)}</text>`,
   ].join("");
 }
 
 export function buildSvg(data: ReceiptData): string {
   const width = 820;
-  const headerH = 118;
+  const headerH = 132;
   const rowH = 30;
-  const footerH = 96;
+  const footerH = 108;
   const height = headerH + data.tokens.length * rowH + footerH;
 
+  // card + offset hard shadow geometry.
+  const cardX = 18;
+  const cardY = 16;
+  const cardW = width - 44;
+  const cardH = height - 42;
+  const shadow = 9;
+
   const rows = data.tokens
-    .map((t, i) => tokenRowSvg(t, headerH + 24 + i * rowH))
+    .map((t, i) => tokenRowSvg(t, headerH + 26 + i * rowH))
     .join("\n  ");
 
   const tx = data.latestCommitTx ? data.latestCommitTx.slice(0, 14) + ".." : "none";
+  const colY = headerH - 6;
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="15">
-  <rect width="${width}" height="${height}" fill="${COL.bg}"/>
-  <rect x="16" y="16" width="${width - 32}" height="${height - 32}" fill="${COL.panel}" stroke="${COL.border}"/>
-  <text x="40" y="52" fill="${COL.dim}">&gt;&gt;---&gt;</text>
-  <text x="120" y="52" fill="${COL.green}" font-weight="bold" font-size="20">morrow</text>
-  <text x="40" y="80" fill="${COL.text}" font-size="16">weekly accuracy receipt</text>
-  <text x="40" y="102" fill="${COL.dim}">week ${esc(data.weekStart)} to ${esc(data.weekEnd)}</text>
-  <line x1="24" y1="${headerH}" x2="${width - 24}" y2="${headerH}" stroke="${COL.border}"/>
-  <text x="40" y="${headerH - 4}" fill="${COL.dim}" font-size="12">token</text>
-  <text x="150" y="${headerH - 4}" fill="${COL.dim}" font-size="12" text-anchor="end">n</text>
-  <text x="330" y="${headerH - 4}" fill="${COL.dim}" font-size="12" text-anchor="end">mean abs err</text>
-  <text x="360" y="${headerH - 4}" fill="${COL.dim}" font-size="12">best call</text>
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="${MONO}" font-size="15">
+  <rect width="${width}" height="${height}" fill="${COL.ground}"/>
+  <rect x="${cardX + shadow}" y="${cardY + shadow}" width="${cardW}" height="${cardH}" fill="${COL.ink}"/>
+  <rect x="${cardX}" y="${cardY}" width="${cardW}" height="${cardH}" fill="${COL.surface}" stroke="${COL.ink}" stroke-width="1.5"/>
+  <rect x="${cardX}" y="${cardY}" width="4" height="${cardH}" fill="${COL.forest}"/>
+  <text x="46" y="58" font-family="${SERIF}" font-weight="700" font-size="30" fill="${COL.ink}">morrow</text>
+  <text x="182" y="58" fill="${COL.faint}" font-size="13">&gt;&gt;---&gt;</text>
+  <text x="46" y="86" fill="${COL.body}" font-size="15">off-hours accuracy receipt</text>
+  <text x="46" y="108" fill="${COL.dim}" font-size="13">week ${esc(data.weekStart)} to ${esc(data.weekEnd)}</text>
+  <circle cx="${width - 44}" cy="52" r="5" fill="${COL.forest}"/>
+  <text x="${width - 58}" y="56" text-anchor="end" fill="${COL.dim}" font-size="11">verified on-chain</text>
+  <line x1="${cardX}" y1="${headerH}" x2="${cardX + cardW}" y2="${headerH}" stroke="${COL.hairline}"/>
+  <text x="46" y="${colY}" fill="${COL.faint}" font-size="11">token</text>
+  <text x="200" y="${colY}" fill="${COL.faint}" font-size="11" text-anchor="end">n</text>
+  <text x="392" y="${colY}" fill="${COL.faint}" font-size="11" text-anchor="end">mean abs err</text>
+  <text x="430" y="${colY}" fill="${COL.faint}" font-size="11">best call</text>
   ${rows}
-  <line x1="24" y1="${height - footerH}" x2="${width - 24}" y2="${height - footerH}" stroke="${COL.border}"/>
-  <text x="40" y="${height - footerH + 26}" fill="${COL.text}">cycles committed on-chain: ${data.cyclesCommitted}</text>
-  <text x="40" y="${height - footerH + 48}" fill="${COL.cyan}">latest commit ${esc(tx)}</text>
-  <text x="40" y="${height - 22}" fill="${COL.dim}" font-size="11">informational feed. not for use in liquidations, settlement, or as sole pricing source. no warranty.</text>
+  <line x1="${cardX}" y1="${height - footerH}" x2="${cardX + cardW}" y2="${height - footerH}" stroke="${COL.hairline}"/>
+  <text x="46" y="${height - footerH + 30}" fill="${COL.ink}">cycles committed on-chain: ${data.cyclesCommitted}</text>
+  <text x="46" y="${height - footerH + 52}" fill="${COL.forestItalic}">latest commit ${esc(tx)}</text>
+  <text x="46" y="${height - 26}" fill="${COL.faint}" font-size="11">informational feed. not for use in liquidations, settlement, or as sole pricing source. no warranty.</text>
 </svg>`;
 }

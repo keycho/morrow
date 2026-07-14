@@ -195,6 +195,77 @@ export function usePolled<T>(path: string | null, intervalMs = 30_000): Polled<T
   return state;
 }
 
+// aggregate median error across the tracked universe. there is no single
+// aggregate route, so this pools /v1/accuracy/:symbol for each symbol and takes
+// the median of every absolute per-sample error. anySamples is false when no
+// open prints have landed yet, so the ui can say "no samples yet" plainly.
+export interface AggAccuracy {
+  medianAbsErrorPct: number | null;
+  totalSamples: number;
+  anySamples: boolean;
+  loading: boolean;
+}
+
+function median(sortedAsc: number[]): number | null {
+  if (sortedAsc.length === 0) return null;
+  const mid = Math.floor(sortedAsc.length / 2);
+  if (sortedAsc.length % 2 === 1) return sortedAsc[mid]!;
+  return (sortedAsc[mid - 1]! + sortedAsc[mid]!) / 2;
+}
+
+export function useAggregateAccuracy(symbols: string[], intervalMs = 300_000): AggAccuracy {
+  const [state, setState] = useState<AggAccuracy>({
+    medianAbsErrorPct: null,
+    totalSamples: 0,
+    anySamples: false,
+    loading: true,
+  });
+  const key = symbols.join(",");
+
+  useEffect(() => {
+    if (symbols.length === 0) {
+      setState({ medianAbsErrorPct: null, totalSamples: 0, anySamples: false, loading: false });
+      return;
+    }
+    let cancelled = false;
+    const load = async (): Promise<void> => {
+      try {
+        const payloads = await Promise.all(
+          symbols.map((s) =>
+            getJson<AccuracyPayload>(`/v1/accuracy/${encodeURIComponent(s.toLowerCase())}`).catch(
+              () => null
+            )
+          )
+        );
+        if (cancelled) return;
+        const absErrors: number[] = [];
+        for (const p of payloads) {
+          if (!p) continue;
+          for (const sample of p.samples) absErrors.push(Math.abs(sample.errorPct));
+        }
+        absErrors.sort((a, b) => a - b);
+        setState({
+          medianAbsErrorPct: median(absErrors),
+          totalSamples: absErrors.length,
+          anySamples: absErrors.length > 0,
+          loading: false,
+        });
+      } catch {
+        if (!cancelled) setState((prev) => ({ ...prev, loading: false }));
+      }
+    };
+    void load();
+    const timer = setInterval(load, intervalMs);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, intervalMs]);
+
+  return state;
+}
+
 export function fmtPrice(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

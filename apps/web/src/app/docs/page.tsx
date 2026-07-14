@@ -182,14 +182,14 @@ export default function DocsPage() {
 
             <h2>mcp install</h2>
             <p>
-              the morrow-oracle-mcp package gives agents read access plus independent verification.
+              the @morrow/mcp-server package gives agents read access plus independent verification.
               claude desktop config:
             </p>
             <pre className="block">{`{
   "mcpServers": {
     "morrow": {
       "command": "npx",
-      "args": ["-y", "morrow-oracle-mcp"],
+      "args": ["-y", "@morrow/mcp-server"],
       "env": {
         "MORROW_API_URL": "https://your-morrow-api.example",
         "MORROW_RPC_URL": "https://your-robinhood-chain-rpc.example"

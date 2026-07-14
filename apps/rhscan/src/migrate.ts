@@ -24,8 +24,10 @@ export async function migrate(): Promise<void> {
     )
   `;
 
+  // only numbered migrations run here. read_indexes.sql is applied separately by
+  // indexes.ts because create index concurrently cannot run in a transaction.
   const files = (await readdir(MIGRATIONS_DIR))
-    .filter((f) => f.endsWith(".sql"))
+    .filter((f) => /^\d{4}_.*\.sql$/.test(f))
     .sort();
 
   const applied = new Set(

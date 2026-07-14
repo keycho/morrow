@@ -1,10 +1,13 @@
--- rhscan initial schema.
+-- rhscan schema: tables, primary keys and operational indexes only.
 --
--- design goal: the four explorer pages (home, block, tx, address) never scan
--- and never join on the read path. we denormalize block_timestamp onto every
--- child row so tx and token lists sort by time without touching blocks, and we
--- keep a dedicated address_transactions table so the address page is a single
--- index range read instead of an or across from/to.
+-- read-path indexes live in migrations/read_indexes.sql and are built with
+-- create index concurrently by `pnpm indexes:create` after the bulk window
+-- backfill, so the write-bound backfill runs without index maintenance. see the
+-- readme for the load sequence.
+--
+-- the explorer indexes only a rolling recent window (see WINDOW_DAYS) and falls
+-- back to live rpc for older data. rpc-fetched rows are cached back into these
+-- same tables with cold = true so the pruner leaves them in place.
 --
 -- conventions:
 --   hashes and addresses are text, lowercase, 0x-prefixed, everywhere.
@@ -26,17 +29,15 @@ create table if not exists blocks (
   base_fee_per_gas  numeric(78,0),
   tx_count          integer      not null,
   size              bigint,
-  l1_block_number   bigint
+  l1_block_number   bigint,
+  cold              boolean      not null default false
 );
-
--- home page: latest blocks first.
-create index if not exists blocks_timestamp_desc_idx on blocks (timestamp desc);
 
 -- ---------------------------------------------------------------------------
 -- transactions
 --   block_timestamp is denormalized so tx lists never join blocks.
---   method_id is a generated column: the first 4 bytes of calldata, which is
---   the function selector we render as "Transfer" style labels later.
+--   method_id is a generated column: the first 4 bytes of calldata, the
+--   function selector rendered as "Transfer" style labels later.
 -- ---------------------------------------------------------------------------
 create table if not exists transactions (
   hash                     text         primary key,
@@ -57,16 +58,9 @@ create table if not exists transactions (
   method_id                bytea generated always as (substring(input from 1 for 4)) stored,
   tx_type                  integer,
   status                   integer,
-  contract_address         text
+  contract_address         text,
+  cold                     boolean      not null default false
 );
-
--- block page: txs of a block, and home page: latest txs across all blocks.
-create index if not exists transactions_block_idx
-  on transactions (block_number desc, tx_index desc);
--- address page (sender side). the address_transactions table covers both
--- directions, but a direct from_address index keeps sender-only queries cheap.
-create index if not exists transactions_from_idx
-  on transactions (from_address, block_number desc);
 
 -- ---------------------------------------------------------------------------
 -- logs
@@ -82,17 +76,14 @@ create table if not exists logs (
   topic2           text,
   topic3           text,
   data             bytea,
+  cold             boolean      not null default false,
   primary key (block_number, log_index)
 );
-
--- address page: logs emitted by a contract, newest first.
-create index if not exists logs_address_idx on logs (address, block_number desc);
 
 -- ---------------------------------------------------------------------------
 -- token_transfers
 --   decoded erc-20 and erc-721 Transfer events. value is null for erc-721,
---   token_id is null for erc-20. one row per Transfer log, so it shares the
---   log's (block_number, log_index) identity.
+--   token_id is null for erc-20. one row per Transfer log.
 -- ---------------------------------------------------------------------------
 create table if not exists token_transfers (
   block_number     bigint        not null,
@@ -105,20 +96,14 @@ create table if not exists token_transfers (
   value            numeric(78,0),
   token_id         numeric(78,0),
   token_type       text          not null,
+  cold             boolean       not null default false,
   primary key (block_number, log_index)
 );
 
--- token page: transfers of a token, newest first.
-create index if not exists token_transfers_token_idx
-  on token_transfers (token_address, block_number desc);
--- address page: token movements in and out of an address.
-create index if not exists token_transfers_from_idx on token_transfers (from_address);
-create index if not exists token_transfers_to_idx on token_transfers (to_address);
-
 -- ---------------------------------------------------------------------------
 -- address_transactions
---   one row per (tx, participant). turns the address page from an or scan
---   across from/to into one index range read. both sides inserted per tx.
+--   one row per (tx, participant). turns the address page into one index range
+--   read instead of an or scan across from/to.
 -- ---------------------------------------------------------------------------
 create table if not exists address_transactions (
   address       text     not null,
@@ -126,17 +111,12 @@ create table if not exists address_transactions (
   tx_index      integer  not null,
   tx_hash       text     not null,
   direction     text     not null,
+  cold          boolean  not null default false,
   primary key (address, block_number, tx_index, direction)
 );
 
-create index if not exists address_transactions_addr_idx
-  on address_transactions (address, block_number desc, tx_index desc);
-
 -- ---------------------------------------------------------------------------
--- tokens
---   populated lazily by the metadata worker. a row with null name/symbol means
---   we tried and the token does not implement the metadata methods; its
---   presence stops us from retrying it forever.
+-- tokens (metadata, keyed by address, never pruned)
 -- ---------------------------------------------------------------------------
 create table if not exists tokens (
   address       text     primary key,
@@ -148,9 +128,7 @@ create table if not exists tokens (
 );
 
 -- ---------------------------------------------------------------------------
--- contracts
---   creation metadata only. source verification is proxied from blockscout
---   later and is out of scope here.
+-- contracts (creation metadata, keyed by address, never pruned)
 -- ---------------------------------------------------------------------------
 create table if not exists contracts (
   address        text     primary key,
@@ -162,8 +140,10 @@ create table if not exists contracts (
 
 -- ---------------------------------------------------------------------------
 -- sync_state
---   one row per worker. tail advances last_indexed_block only after a block's
---   rows are committed.
+--   one row per worker. also holds published scalars the frontend reads:
+--   worker='tail'           highest block the tail has committed
+--   worker='window_floor'   lowest block the window currently covers
+--   worker='backfill_floor' contiguous-from-head watermark (trust this in ui)
 -- ---------------------------------------------------------------------------
 create table if not exists sync_state (
   worker             text        primary key,
@@ -172,9 +152,7 @@ create table if not exists sync_state (
 );
 
 -- ---------------------------------------------------------------------------
--- backfill_ranges
---   the work queue. workers claim a pending range with
---   for update skip locked, which makes parallel and multi-process claims safe.
+-- backfill_ranges (the work queue)
 -- ---------------------------------------------------------------------------
 create table if not exists backfill_ranges (
   id          bigserial   primary key,
@@ -186,6 +164,7 @@ create table if not exists backfill_ranges (
   unique (from_block)
 );
 
--- claim scans only pending rows in from_block order.
+-- operational index for claim (kept here, not a read-path index): claim scans
+-- only pending rows, in from_block order (forward or reverse).
 create index if not exists backfill_ranges_pending_idx
   on backfill_ranges (from_block) where status = 'pending';

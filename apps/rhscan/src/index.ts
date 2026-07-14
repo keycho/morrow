@@ -1,9 +1,13 @@
 // entrypoint. reads MODE and starts the right workers.
 //
-//   backfill  fill genesis..head via the work queue, then exit
+//   backfill  fill the recent window via the work queue, then exit
 //   tail      follow the head with reorg handling (runs forever)
 //   tokens    resolve token metadata (runs forever)
-//   both      backfill + tail + tokens together (default)
+//   prune     roll the window forward on a schedule (runs forever)
+//   both      backfill + tail + tokens + prune together (default)
+//
+// the cold-path resolver (resolve.ts) is a library the frontend calls, not a
+// worker, so it is not started here.
 //
 // migrations run first so a single railway process is self-contained.
 
@@ -11,6 +15,7 @@ import { migrate } from "./migrate.js";
 import { runBackfill } from "./backfill.js";
 import { runTail } from "./tail.js";
 import { runTokens } from "./tokens.js";
+import { runPrune } from "./prune.js";
 import { closeDb } from "./db.js";
 import { log } from "./log.js";
 
@@ -41,9 +46,12 @@ async function main(): Promise<void> {
   if (mode === "backfill" || mode === "both") tasks.push(runBackfill(stopped));
   if (mode === "tail" || mode === "both") tasks.push(runTail(stopped));
   if (mode === "tokens" || mode === "both") tasks.push(runTokens(stopped));
+  if (mode === "prune" || mode === "both") tasks.push(runPrune(stopped));
 
   if (tasks.length === 0) {
-    throw new Error(`unknown MODE '${mode}', expected backfill|tail|both|tokens`);
+    throw new Error(
+      `unknown MODE '${mode}', expected backfill|tail|both|tokens|prune`,
+    );
   }
 
   await Promise.all(tasks);

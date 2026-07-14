@@ -36,6 +36,8 @@ export interface RawReceipt {
 export interface RawTx {
   hash: Hex;
   transactionIndex: Hex;
+  // present on eth_getTransactionByHash / block transactions, null when pending.
+  blockNumber?: Hex | null;
   from: Hex;
   to: Hex | null;
   value: Hex;

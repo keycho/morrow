@@ -1,16 +1,28 @@
-// backfill worker: a work queue, not a for loop.
+// windowed backfill worker: a work queue, not a for loop.
 //
-// genesis..head is chunked into backfill_ranges once. CONCURRENCY workers each
-// claim a pending range with for update skip locked (safe in parallel and
-// across processes), fetch every block and its receipts through the batched
-// transport, transform, and write the whole range in one transaction of
-// chunked on-conflict-do-nothing inserts. a failing range is requeued with
-// backoff and only killed after 5 attempts, never the process.
+// we do not index full history. on startup we find the window floor (the lowest
+// block within WINDOW_DAYS of now) and seed backfill_ranges only from there to
+// head. workers claim ranges newest-first (order by from_block desc) so recent
+// data lands within minutes. ranges are aligned to a fixed RANGE_SIZE grid so
+// widening the window later re-seeds cleanly with no overlap.
+//
+// two watermarks are published to sync_state for the frontend:
+//   window_floor    the lowest block the window covers
+//   backfill_floor  the contiguous-from-head watermark: the lowest block above
+//                   which every range is done. this is what "fully indexed from
+//                   here up" means, and the number the ui should trust.
 
 import { getBlockByNumber, getBlockReceipts, getHead } from "./chain.js";
 import { sql, writeBlocks } from "./db.js";
 import { transformBlock } from "./transform.js";
 import { log } from "./log.js";
+import {
+  findWindowFloor,
+  setSyncValue,
+  WINDOW_DAYS,
+  WINDOW_FLOOR_KEY,
+  BACKFILL_FLOOR_KEY,
+} from "./window.js";
 
 const RANGE_SIZE = Number(process.env.RANGE_SIZE ?? 200);
 const CONCURRENCY = Number(process.env.CONCURRENCY ?? 50);
@@ -26,6 +38,7 @@ interface Range {
 }
 
 interface Stats {
+  gridFloor: number;
   totalRanges: number;
   totalBlocks: number;
   rangesDone: number;
@@ -35,28 +48,28 @@ interface Stats {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// chunk genesis..head into pending ranges. idempotent: unique(from_block) plus
-// on conflict do nothing means re-running never duplicates or resets progress.
-async function seedRanges(head: number): Promise<void> {
-  const existing = await sql<{ n: number }[]>`
-    select count(*)::int as n from backfill_ranges
-  `;
-  if ((existing[0]?.n ?? 0) > 0) {
-    log.info("backfill ranges already seeded, skipping seed");
-    return;
-  }
-  log.info(`seeding backfill ranges 0..${head} step ${RANGE_SIZE}`);
+// align to a fixed grid so re-seeding with a different floor never overlaps.
+function gridFloorOf(floor: number): number {
+  return floor - (floor % RANGE_SIZE);
+}
+
+// seed pending ranges gridFloor..head. idempotent: unique(from_block) with on
+// conflict do nothing means re-running never duplicates or resets progress, and
+// a lower floor (a widened window) simply adds the missing lower ranges.
+async function seedRanges(gridFloor: number, head: number): Promise<void> {
+  log.info(
+    `seeding backfill ranges ${gridFloor}..${head} step ${RANGE_SIZE}`,
+  );
   await sql`
     insert into backfill_ranges (from_block, to_block, status)
     select gs as from_block,
            least(gs + ${RANGE_SIZE - 1}, ${head}) as to_block,
            'pending'
-    from generate_series(0, ${head}, ${RANGE_SIZE}) as gs
+    from generate_series(${gridFloor}, ${head}, ${RANGE_SIZE}) as gs
     on conflict (from_block) do nothing
   `;
 }
 
-// reclaim ranges left claimed by a crashed worker (this process or a sibling).
 async function reclaimStale(): Promise<void> {
   await sql`
     update backfill_ranges
@@ -66,6 +79,7 @@ async function reclaimStale(): Promise<void> {
   `;
 }
 
+// claim the highest pending range so recent blocks land first.
 async function claimRange(): Promise<Range | null> {
   const rows = await sql<Range[]>`
     update backfill_ranges
@@ -73,7 +87,7 @@ async function claimRange(): Promise<Range | null> {
      where id = (
        select id from backfill_ranges
         where status = 'pending'
-        order by from_block
+        order by from_block desc
         limit 1
         for update skip locked
      )
@@ -86,8 +100,6 @@ async function processRange(range: Range): Promise<void> {
   const nums: number[] = [];
   for (let n = range.from_block; n <= range.to_block; n += 1) nums.push(n);
 
-  // fire block and receipt reads for the whole range; the batched transport
-  // packs them into json-rpc batches. this is the biggest throughput lever.
   const [blocks, receipts] = await Promise.all([
     Promise.all(nums.map((n) => getBlockByNumber(n))),
     Promise.all(nums.map((n) => getBlockReceipts(n))),
@@ -138,13 +150,22 @@ async function pendingOrClaimed(): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+// contiguous-from-head watermark: everything above the highest not-done range is
+// done, so the floor is that range's top + 1. all done means the whole window is
+// contiguous, so the floor is the grid floor.
+async function computeBackfillFloor(gridFloor: number): Promise<number> {
+  const rows = await sql<{ m: string | null }[]>`
+    select max(to_block) as m from backfill_ranges where status <> 'done'
+  `;
+  const m = rows[0]?.m;
+  return m == null ? gridFloor : Number(m) + 1;
+}
+
 async function worker(stats: Stats, stopped: () => boolean): Promise<void> {
   for (;;) {
     if (stopped()) return;
     const range = await claimRange();
     if (!range) {
-      // nothing to claim right now. exit only once the queue is truly drained,
-      // otherwise wait for requeued failures still in flight elsewhere.
       if ((await pendingOrClaimed()) === 0) return;
       await sleep(1000);
       continue;
@@ -165,6 +186,9 @@ function startReporter(stats: Stats): NodeJS.Timeout {
   let lastAt = Date.now();
   return setInterval(() => {
     void reclaimStale();
+    void computeBackfillFloor(stats.gridFloor).then((floor) =>
+      setSyncValue(BACKFILL_FLOOR_KEY, floor),
+    );
     const now = Date.now();
     const dt = (now - lastAt) / 1000;
     const recentBps = dt > 0 ? (stats.blocksDone - lastBlocks) / dt : 0;
@@ -193,7 +217,16 @@ function formatEta(sec: number): string {
 
 export async function runBackfill(stopped: () => boolean = () => false): Promise<void> {
   const head = await getHead();
-  await seedRanges(head);
+  const windowFloor = await findWindowFloor(head);
+  const gridFloor = gridFloorOf(windowFloor);
+  const windowBlocks = head - windowFloor + 1;
+
+  log.info(
+    `window ${WINDOW_DAYS} days: floor block ${windowFloor} (grid ${gridFloor}), head ${head}, ${windowBlocks} blocks in window`,
+  );
+  await setSyncValue(WINDOW_FLOOR_KEY, windowFloor);
+
+  await seedRanges(gridFloor, head);
   await reclaimStale();
 
   const counts = await sql<{ total: number; done: number }[]>`
@@ -205,15 +238,16 @@ export async function runBackfill(stopped: () => boolean = () => false): Promise
   const doneRanges = counts[0]?.done ?? 0;
 
   const stats: Stats = {
+    gridFloor,
     totalRanges,
-    totalBlocks: head + 1,
+    totalBlocks: head - gridFloor + 1,
     rangesDone: doneRanges,
     blocksDone: doneRanges * RANGE_SIZE,
     startedAt: Date.now(),
   };
 
   log.info(
-    `backfill starting: ${totalRanges} ranges (${doneRanges} already done), head ${head}, concurrency ${CONCURRENCY}`,
+    `backfill starting: ${totalRanges} ranges (${doneRanges} already done), concurrency ${CONCURRENCY}`,
   );
 
   const reporter = startReporter(stats);
@@ -224,6 +258,8 @@ export async function runBackfill(stopped: () => boolean = () => false): Promise
   } finally {
     clearInterval(reporter);
   }
+
+  await setSyncValue(BACKFILL_FLOOR_KEY, await computeBackfillFloor(gridFloor));
   log.info(
     `backfill complete: ${stats.rangesDone} ranges done this run, ${stats.blocksDone} blocks`,
   );

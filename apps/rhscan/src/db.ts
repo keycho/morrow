@@ -57,33 +57,54 @@ export async function insertBatch(
 }
 
 // write a set of already-transformed blocks in one transaction, one chunked
-// insert per table. used by both backfill (a whole range) and tail (a small
-// batch). every insert is on conflict do nothing, so overlap between workers
-// and re-processing after a crash are both safe.
+// insert per table. used by backfill (a whole range), tail (a small batch) and
+// the cold-path resolver. every insert is on conflict do nothing, so overlap
+// between workers and re-processing after a crash are both safe.
+//
+// when cold is true, every row gets cold = true so the pruner leaves it alone.
+// on conflict do nothing means re-caching a block that is already indexed
+// (cold = false) never flips it to cold, and vice versa.
 export async function writeBlocks(
   exec: Executor,
   blocks: readonly BlockRows[],
+  opts: { cold?: boolean } = {},
 ): Promise<void> {
   if (blocks.length === 0) return;
+  const cold = opts.cold ?? false;
   const flat = <K extends keyof BlockRows>(k: K) =>
     blocks.flatMap((b) => b[k] as Record<string, unknown>[]);
 
-  await insertBatch(exec, "blocks", COLUMNS.blocks, blocks.map((b) => b.block));
-  await insertBatch(exec, "transactions", COLUMNS.transactions, flat("transactions"));
-  await insertBatch(exec, "logs", COLUMNS.logs, flat("logs"));
-  await insertBatch(
-    exec,
-    "token_transfers",
-    COLUMNS.token_transfers,
-    flat("tokenTransfers"),
-  );
-  await insertBatch(
-    exec,
+  // blocks, transactions and their children carry the cold flag; contracts is
+  // never pruned (keyed by address, not block) so it has no cold column.
+  const write = async (
+    table: string,
+    cols: readonly string[],
+    rows: Record<string, unknown>[],
+    coldable: boolean,
+  ) => {
+    if (coldable && cold) {
+      await insertBatch(
+        exec,
+        table,
+        [...cols, "cold"],
+        rows.map((r) => ({ ...r, cold: true })),
+      );
+    } else {
+      await insertBatch(exec, table, cols, rows);
+    }
+  };
+
+  await write("blocks", COLUMNS.blocks, blocks.map((b) => b.block), true);
+  await write("transactions", COLUMNS.transactions, flat("transactions"), true);
+  await write("logs", COLUMNS.logs, flat("logs"), true);
+  await write("token_transfers", COLUMNS.token_transfers, flat("tokenTransfers"), true);
+  await write(
     "address_transactions",
     COLUMNS.address_transactions,
     flat("addressTxns"),
+    true,
   );
-  await insertBatch(exec, "contracts", COLUMNS.contracts, flat("contracts"));
+  await write("contracts", COLUMNS.contracts, flat("contracts"), false);
 }
 
 export async function closeDb(): Promise<void> {

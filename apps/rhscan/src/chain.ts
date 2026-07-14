@@ -15,7 +15,7 @@ import {
   http,
 } from "viem";
 import { log } from "./log.js";
-import type { RawBlock, RawReceipt } from "./transform.js";
+import type { RawBlock, RawReceipt, RawTx } from "./transform.js";
 
 export const CHAIN_ID = 4663;
 
@@ -170,4 +170,48 @@ export function getBlockByNumber(n: number): Promise<RawBlock> {
 
 export function getBlockReceipts(n: number): Promise<RawReceipt[]> {
   return rpc<RawReceipt[]>("eth_getBlockReceipts", [toHex(n)]);
+}
+
+// header-only read for window-floor binary search: cheap, no transactions.
+export async function getBlockHeaderTimestamp(n: number): Promise<number> {
+  const b = await rpc<{ timestamp: `0x${string}` }>("eth_getBlockByNumber", [
+    toHex(n),
+    false,
+  ]);
+  return Number(BigInt(b.timestamp));
+}
+
+// cold-path reads: single tx / block / account lookups for data below the
+// window. these are not batched hot-path calls, they serve one user query.
+export function getTransactionByHash(hash: string): Promise<RawTx | null> {
+  return rpc<RawTx | null>("eth_getTransactionByHash", [hash]);
+}
+
+export function getTransactionReceipt(hash: string): Promise<RawReceipt | null> {
+  return rpc<RawReceipt | null>("eth_getTransactionReceipt", [hash]);
+}
+
+export function getBlockByHash(
+  hash: string,
+  full = true,
+): Promise<RawBlock | null> {
+  return rpc<RawBlock | null>("eth_getBlockByHash", [hash, full]);
+}
+
+// eth_getBlockByNumber can return null for an unknown number; getBlockByNumber
+// above assumes it exists (hot path), this variant tolerates a miss.
+export function getBlockByNumberOrNull(n: number): Promise<RawBlock | null> {
+  return rpc<RawBlock | null>("eth_getBlockByNumber", [toHex(n), true]);
+}
+
+export function getBalance(address: string): Promise<`0x${string}`> {
+  return rpc<`0x${string}`>("eth_getBalance", [address, "latest"]);
+}
+
+export function getTransactionCount(address: string): Promise<`0x${string}`> {
+  return rpc<`0x${string}`>("eth_getTransactionCount", [address, "latest"]);
+}
+
+export function getCode(address: string): Promise<`0x${string}`> {
+  return rpc<`0x${string}`>("eth_getCode", [address, "latest"]);
 }

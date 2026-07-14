@@ -513,15 +513,24 @@ export interface ProxySourceConfig {
 // three shared 24/7 signals drive the off-hours drift, blended per token by
 // the weights below and by which token references which (see tokens[].proxies).
 // source: yahoo finance v8 chart (keyless, clean json, covers index futures
-// and crypto). finnhub was checked but does not serve futures or index quotes
-// on the free tier ("market data subscription required for cfd indices"), so
-// it stays the anchor source only. the drift is the return of each signal
-// since the last official close (see engine blendedDrift), so these give
-// direction while the us market is shut:
+// and crypto). finnhub was rechecked july 2026 and still does not serve these
+// on the free tier: ES=F returns all zeros and ^GSPC returns "market data
+// subscription required for cfd indices"; it serves only the stock/etf symbols
+// it already anchors (spy, tsla, ...), so it stays the anchor source only.
+// the drift is the return of each signal since the last official close (see
+// engine blendedDrift), so these give direction while the us market is shut:
 //   PROXY_ES  s&p 500 e-mini futures  -> broad market direction (~23h/day)
-//   PROXY_NQ  nasdaq 100 e-mini futures -> tech direction (weighted up for the
+//   PROXY_NQ  nasdaq 100 e-mini futures -> tech direction (heaviest for the
 //             tech names, which reference it; spy does not)
 //   PROXY_ETH ethereum spot            -> risk-on/off, light weight, true 24/7
+//
+// weight tuning: NQ 1.5 > ES 1.0 so a tech name leans on nasdaq direction while
+// still picking up broad beta; ETH is deliberately light (0.15) so crypto acts
+// as a risk-on/off nudge rather than dragging a stock's fair value around with
+// its own volatility. concretely the crypto share of the blend is ~6% for a
+// tech name (NQ+ES+ETH) and ~13% for spy (ES+ETH); a 1% eth move then shifts
+// fair value by only ~0.06% / ~0.13%. futures overnight moves are smooth, so
+// they are not down-weighted. the blend is capped at model.maxDriftAbs.
 export const proxySources: ProxySourceConfig[] = [
   {
     name: "PROXY_ES",
@@ -550,7 +559,11 @@ export const proxySources: ProxySourceConfig[] = [
     symbol: "eth",
     url: "https://query1.finance.yahoo.com/v8/finance/chart/ETH-USD?range=5d&interval=1d",
     jsonPath: "chart.result.0.meta.regularMarketPrice",
-    weight: 0.25,
+    // light on purpose: crypto is a risk-on/off tell, not a stock proxy. at
+    // 0.15 it is ~6% of a tech blend and ~13% of spy's, so it nudges without
+    // injecting crypto volatility into fair value. eth is also the only live
+    // signal on weekends (futures shut), when it carries the drift alone.
+    weight: 0.15,
     timeoutMs: 6_000,
     retries: 2,
     stalenessMs: 900_000,
@@ -659,8 +672,13 @@ export const model = {
   // proxies within ±this return are considered flat for the spike guard.
   proxyFlatThreshold: 0.002,
 
-  // hard cap on the absolute blended drift component.
-  maxDriftAbs: 0.20,
+  // hard cap on the absolute blended drift component. tightened from 0.20 to
+  // 0.10: real overnight index moves almost never exceed a few percent (a
+  // level-1 circuit-breaker halt is 7%), so 10% leaves headroom for a genuine
+  // large move while clamping a pathological proxy reading (e.g. a bad tick
+  // reading double) before it can throw fair value off. anti-twitch, not a
+  // target; normal drift sits well inside it.
+  maxDriftAbs: 0.10,
 
   // confidence band. half-width as a fraction of fair value:
   // basePct + confidenceScalePct * (1 - confidence / 100).

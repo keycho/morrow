@@ -125,6 +125,40 @@ export interface ReceiptListItem {
   };
 }
 
+export interface BacktestMetrics {
+  predictor: "naive" | "drift" | "morrow";
+  n: number;
+  maePct: number;
+  medianAePct: number;
+  rmsePct: number;
+  meanErrorPct: number;
+  worstPct: number;
+  p50AbsPct: number;
+  p90AbsPct: number;
+  hitRate: number | null;
+  winRateVsNaive: number | null;
+}
+
+export interface BacktestScope {
+  scope: string;
+  naive: BacktestMetrics | null;
+  drift: BacktestMetrics | null;
+  morrow: BacktestMetrics | null;
+}
+
+export interface BacktestPayload {
+  run: {
+    runAt: string;
+    source: string;
+    method: string;
+    historyFrom: string | null;
+    historyTo: string | null;
+    sessions: number;
+  };
+  pooled: BacktestScope | null;
+  tokens: BacktestScope[];
+}
+
 export interface HealthPayload {
   status: "ok" | "degraded" | "down";
   mockMode: boolean;
@@ -144,6 +178,45 @@ export interface HealthPayload {
     ageMs: number | null;
     stale: boolean;
   }[];
+}
+
+export interface AskProvenance {
+  cycleId: number | null;
+  confidence: number | null;
+  ts: string | null;
+  txHash: string | null;
+  txUrl: string | null;
+  status: string | null;
+  contract: string;
+  chainId: number;
+  proofPath: string | null;
+  verifyPath: string | null;
+  note: string;
+}
+
+export interface AskResponse {
+  ok: boolean;
+  panel: "fair_value" | "spread" | "accuracy" | "commit" | null;
+  symbol: string | null;
+  question: string;
+  answer: string;
+  reason?: string;
+  data: Record<string, unknown> | null;
+  provenance: AskProvenance | null;
+}
+
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(res.status === 429 ? "rate limited, slow down a moment" : `api ${res.status}: ${text.slice(0, 160)}`);
+  }
+  const parsed = (await res.json()) as { data: T };
+  return parsed.data;
 }
 
 export async function getJson<T>(path: string): Promise<T> {

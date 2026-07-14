@@ -14,7 +14,12 @@
 
 import { createPublicClient, http, type Hex } from "viem";
 import pg from "pg";
-import { DISCOVERY_CANDIDATE_ID_BASE, discoveryCandidates, type TokenConfig } from "@morrow/config";
+import {
+  DISCOVERY_CANDIDATE_ID_BASE,
+  discoveryCandidates,
+  redactSecrets,
+  type TokenConfig,
+} from "@morrow/config";
 import {
   readAnchorReferences,
   runDiscovery,
@@ -190,7 +195,7 @@ async function main(): Promise<void> {
   const ethUsdRaw = process.env.ETH_USD;
   const ethUsd = ethUsdRaw && Number.isFinite(Number(ethUsdRaw)) ? Number(ethUsdRaw) : null;
 
-  note(`morrow pool discovery against ${rpcUrl.replace(/\/\/.*@/, "//")}`);
+  note(`morrow pool discovery against ${redactSecrets(rpcUrl)}`);
   note(
     ethUsd !== null
       ? `dollarizing weth/eth pools at eth/usd = ${ethUsd}`

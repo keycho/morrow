@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "build": "tsc --noEmit",
-    "test": "echo indexer is exercised via mock mode, engine has the unit tests",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/pg": "^8.11.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }

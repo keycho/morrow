@@ -7,6 +7,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck && tsc -p scripts/tsconfig.json --noEmit",
+    "backtest": "tsx scripts/backtest.ts",
     "discover-pools": "tsx scripts/discover-pools.ts",
     "receipts": "pnpm --filter @morrow/receipts start",
     "dev:indexer": "pnpm --filter @morrow/indexer dev",

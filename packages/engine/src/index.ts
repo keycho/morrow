@@ -76,3 +76,7 @@ export {
 } from "./merkle.js";
 
 export { cycleIdFor, cycleStartMs, cycleEndMs } from "./cycle.js";
+
+export { type Metrics, median, percentile, scoreMetrics } from "./backtest.js";
+
+export { closeBaselineFresh } from "./baseline.js";

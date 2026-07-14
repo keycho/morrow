@@ -1,17 +1,26 @@
 {
-  "name": "morrow-oracle-mcp",
+  "name": "@morrow/mcp-server",
   "version": "0.1.0",
-  "description": "mcp server for morrow, the off-hours fair value oracle for tokenized equities on robinhood chain. read-only data tools plus independent merkle verification.",
+  "description": "mcp server for morrow, the off-hours fair value oracle for tokenized equities on robinhood chain. read-only data tools plus independent merkle verification against the on-chain commit registry.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "morrow-oracle-mcp": "dist/index.js"
+    "morrow-mcp-server": "dist/index.js"
   },
   "main": "dist/index.js",
   "files": [
     "dist",
     "README.md"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/keycho/morrow.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/keycho/morrow/tree/main/packages/mcp#readme",
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
@@ -21,6 +30,7 @@
   },
   "keywords": [
     "mcp",
+    "model-context-protocol",
     "oracle",
     "robinhood-chain",
     "fair-value",

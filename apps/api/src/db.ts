@@ -14,13 +14,72 @@ export function db(): pg.Pool {
   pool = new Pool({
     connectionString: url,
     max: 10,
+    // idle below the supabase pooler's own cutoff so we recycle clients before
+    // it silently kills them; keepAlive so a NAT/idle drop is noticed early.
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    keepAlive: true,
+    // never let a single query wedge a pooled connection forever.
+    statement_timeout: 15_000,
+    application_name: "morrow-api",
   });
   pool.on("error", () => {
     // dropped idle clients must not crash the api
   });
   return pool;
+}
+
+// the pooled connection to supabase's transaction pooler can be recycled or
+// dropped between acquire and query, which surfaced as intermittent 500s on the
+// read routes: a single query landing on a just-closed connection rejected and
+// the route threw. these errors are transient and safe to retry on a read (the
+// api only reads), so `query` retries them a couple of times with a short
+// backoff. a real error (bad sql, constraint) is not transient and is rethrown
+// at once.
+const TRANSIENT_DB_MARKERS = [
+  "connection terminated",
+  "server closed the connection",
+  "connection reset",
+  "econnreset",
+  "epipe",
+  "etimedout",
+  "timeout exceeded when trying to connect",
+  "client has encountered a connection error",
+  "connection ended unexpectedly",
+  "terminating connection due to administrator command",
+];
+
+export function isTransientDbError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return TRANSIENT_DB_MARKERS.some((m) => msg.includes(m));
+}
+
+export async function withDbRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; delayMs?: (attempt: number) => number } = {}
+): Promise<T> {
+  const retries = opts.retries ?? 2;
+  const delayMs = opts.delayMs ?? ((attempt: number) => 50 * 2 ** attempt);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt === retries || !isTransientDbError(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs(attempt)));
+    }
+  }
+  throw lastErr;
+}
+
+// every read goes through here so a transient pooled-connection drop is retried
+// instead of becoming a 500.
+export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
+  text: string,
+  params?: unknown[]
+): Promise<pg.QueryResult<T>> {
+  return withDbRetry(() => db().query<T>(text, params as unknown[]));
 }
 
 export interface FairValueApiRow {
@@ -68,7 +127,7 @@ function mapFairValue(row: Record<string, unknown>): FairValueApiRow {
 }
 
 export async function latestFairValues(): Promise<FairValueApiRow[]> {
-  const res = await db().query(
+  const res = await query(
     `select distinct on (fv.token_id)
        fv.*, t.symbol, t.name
      from fair_values fv
@@ -80,7 +139,7 @@ export async function latestFairValues(): Promise<FairValueApiRow[]> {
 }
 
 export async function latestFairValueFor(tokenId: number): Promise<FairValueApiRow | null> {
-  const res = await db().query(
+  const res = await query(
     `select fv.*, t.symbol, t.name
      from fair_values fv
      join tokens t on t.id = fv.token_id
@@ -100,7 +159,7 @@ export async function fairValueHistory(
   limit: number,
   offset: number
 ): Promise<FairValueApiRow[]> {
-  const res = await db().query(
+  const res = await query(
     `select fv.*, t.symbol, t.name
      from fair_values fv
      join tokens t on t.id = fv.token_id
@@ -113,7 +172,7 @@ export async function fairValueHistory(
 }
 
 export async function fairValueHistoryCount(tokenId: number, from: Date, to: Date): Promise<number> {
-  const res = await db().query(
+  const res = await query(
     `select count(*)::int as n from fair_values where token_id = $1 and ts >= $2 and ts <= $3`,
     [tokenId, from, to]
   );
@@ -143,7 +202,7 @@ function mapCommit(row: Record<string, unknown>): CommitApiRow {
 }
 
 export async function listCommits(limit: number, offset: number): Promise<CommitApiRow[]> {
-  const res = await db().query(
+  const res = await query(
     `select cycle_id, merkle_root, observation_count, tx_hash, status, committed_at, created_at
      from commits
      order by cycle_id desc
@@ -167,7 +226,7 @@ export interface CommitWithLeaves extends CommitApiRow {
 }
 
 export async function commitByCycle(cycleId: number): Promise<CommitWithLeaves | null> {
-  const res = await db().query(
+  const res = await query(
     `select cycle_id, merkle_root, observation_count, tx_hash, status, committed_at, created_at, leaves
      from commits
      where cycle_id = $1`,
@@ -190,7 +249,7 @@ export interface AccuracySample {
 // realized error: last published off-hours fair value before each official
 // open print, versus that print.
 export async function accuracySamples(tokenId: number, limit: number): Promise<AccuracySample[]> {
-  const res = await db().query(
+  const res = await query(
     `select a.market_ts, a.price as open_price, fv.fair_value, fv.confidence, fv.ts as predicted_at
      from anchors a
      join lateral (
@@ -230,7 +289,7 @@ export interface HeartbeatRow {
 }
 
 export async function latestHeartbeats(): Promise<HeartbeatRow[]> {
-  const res = await db().query(
+  const res = await query(
     `select distinct on (service) service, ts, ok, detail
      from heartbeats
      order by service, ts desc`
@@ -244,19 +303,19 @@ export async function latestHeartbeats(): Promise<HeartbeatRow[]> {
 }
 
 export async function newestFairValueTs(): Promise<string | null> {
-  const res = await db().query(`select max(ts) as ts from fair_values`);
+  const res = await query(`select max(ts) as ts from fair_values`);
   const ts = res.rows[0]?.ts;
   return ts ? new Date(ts).toISOString() : null;
 }
 
 export async function newestAnchorTs(): Promise<string | null> {
-  const res = await db().query(`select max(created_at) as ts from anchors`);
+  const res = await query(`select max(created_at) as ts from anchors`);
   const ts = res.rows[0]?.ts;
   return ts ? new Date(ts).toISOString() : null;
 }
 
 export async function newestConfirmedCommitTs(): Promise<string | null> {
-  const res = await db().query(
+  const res = await query(
     `select max(committed_at) as ts from commits where status = 'confirmed'`
   );
   const ts = res.rows[0]?.ts;
@@ -264,7 +323,7 @@ export async function newestConfirmedCommitTs(): Promise<string | null> {
 }
 
 export async function lastProxyTickPerSource(): Promise<{ source: string; ts: string }[]> {
-  const res = await db().query(
+  const res = await query(
     `select distinct on (source) source, ts from proxy_ticks order by source, ts desc`
   );
   return res.rows.map((row) => ({ source: String(row.source), ts: new Date(row.ts).toISOString() }));
@@ -281,7 +340,7 @@ export interface ReceiptListItem {
 }
 
 export async function listReceipts(limit: number): Promise<ReceiptListItem[]> {
-  const res = await db().query(
+  const res = await query(
     `select week_start, week_end, generated_at, (png_base64 is not null) as has_png, summary
      from receipts order by week_start desc limit $1`,
     [limit]
@@ -301,7 +360,7 @@ export interface ReceiptDetail extends ReceiptListItem {
 }
 
 export async function getReceipt(weekStart: string): Promise<ReceiptDetail | null> {
-  const res = await db().query(
+  const res = await query(
     `select week_start, week_end, generated_at, (png_base64 is not null) as has_png,
             summary, markdown, svg
      from receipts where week_start = $1`,
@@ -321,7 +380,7 @@ export async function getReceipt(weekStart: string): Promise<ReceiptDetail | nul
 }
 
 export async function getReceiptPng(weekStart: string): Promise<Buffer | null> {
-  const res = await db().query(`select png_base64 from receipts where week_start = $1`, [weekStart]);
+  const res = await query(`select png_base64 from receipts where week_start = $1`, [weekStart]);
   const row = res.rows[0];
   if (!row || row.png_base64 === null) return null;
   return Buffer.from(String(row.png_base64), "base64");
@@ -330,7 +389,7 @@ export async function getReceiptPng(weekStart: string): Promise<Buffer | null> {
 // --- keys and admin ----------------------------------------------------------
 
 export async function keyTierByHash(keyHash: string): Promise<string | null> {
-  const res = await db().query(
+  const res = await query(
     `update keys set last_used_at = now() where key_hash = $1 and active returning tier`,
     [keyHash]
   );

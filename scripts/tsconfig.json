@@ -4,5 +4,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["discover-pools.ts"]
+  "include": ["discover-pools.ts", "backtest.ts"]
 }

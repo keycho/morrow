@@ -39,6 +39,7 @@ import { registerAdminRoutes } from "./routes/admin.js";
 import { registerSpreadRoutes } from "./routes/spreads.js";
 import { registerReceiptRoutes } from "./routes/receipts.js";
 import { registerBacktestRoutes } from "./routes/backtest.js";
+import { registerAskRoutes } from "./routes/ask.js";
 
 interface TieredRequest extends FastifyRequest {
   morrowTier?: Tier;
@@ -162,6 +163,7 @@ async function main(): Promise<void> {
   registerSpreadRoutes(app);
   registerReceiptRoutes(app);
   registerBacktestRoutes(app);
+  registerAskRoutes(app);
 
   app.setNotFoundHandler((_req, reply) => {
     void reply.code(404).send({ error: "not found", disclaimer });

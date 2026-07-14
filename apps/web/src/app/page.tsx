@@ -8,17 +8,66 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   fmtAge,
   fmtPrice,
+  postJson,
   useAggregateAccuracy,
   usePolled,
+  type AskResponse,
   type CommitRow,
   type FairValue,
 } from "@/lib/api";
 import { RegimePill } from "@/components/RegimePill";
 import { Ticker } from "@/components/Ticker";
+
+function AskAnswer({
+  asking,
+  answer,
+  error,
+}: {
+  asking: boolean;
+  answer: AskResponse | null;
+  error: string | null;
+}) {
+  if (asking) return <div className="ask-answer thinking">morrow is checking its data…</div>;
+  if (error)
+    return (
+      <div className="ask-answer fail">
+        <div className="a-head">could not ask</div>
+        <div className="a-body">{error}</div>
+      </div>
+    );
+  if (!answer) return null;
+  if (!answer.ok)
+    return (
+      <div className="ask-answer refuse">
+        <div className="a-head">morrow cannot answer that from its data</div>
+        <div className="a-body">{answer.answer}</div>
+      </div>
+    );
+  const p = answer.provenance;
+  return (
+    <div className="ask-answer ok">
+      <div className="a-head">
+        {answer.panel?.replace("_", " ")} · {answer.symbol}
+      </div>
+      <div className="a-body">{answer.answer}</div>
+      {p && (
+        <div className="a-prov">
+          {p.cycleId !== null && <>cycle #{p.cycleId.toLocaleString("en-US")}</>}
+          {p.confidence !== null && <> · confidence {p.confidence}/100</>}
+          {p.verifyPath && (
+            <>
+              {" · "}
+              <Link href={p.verifyPath}>verify it on-chain ↗</Link>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function clampPct(x: number): number {
   return Math.max(3, Math.min(97, x));
@@ -258,7 +307,6 @@ function SpecimenCard({
 }
 
 export default function LandingPage() {
-  const router = useRouter();
   const { data: rows, error } = usePolled<FairValue[]>("/v1/prices", 30_000);
   const { data: commits } = usePolled<CommitRow[]>("/v1/commits?limit=1", 60_000);
   const latestCommit = commits && commits.length > 0 ? commits[0]! : null;
@@ -268,6 +316,9 @@ export default function LandingPage() {
 
   const featured = useMemo(() => pickFeatured(rows ?? []), [rows]);
   const [ask, setAsk] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [answer, setAnswer] = useState<AskResponse | null>(null);
+  const [askErr, setAskErr] = useState<string | null>(null);
 
   const cycleMeta = latestCommit
     ? `cycle #${latestCommit.cycleId.toLocaleString("en-US")} · ${new Date(latestCommit.committedAt ?? latestCommit.createdAt).toISOString().slice(11, 16)} utc`
@@ -275,11 +326,21 @@ export default function LandingPage() {
       ? `cycle #${featured.cycleId.toLocaleString("en-US")} · ${new Date(featured.ts).toISOString().slice(11, 16)} utc`
       : "cycle unavailable";
 
-  const submitAsk = (e: React.FormEvent): void => {
+  const submitAsk = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    const text = ask.toLowerCase();
-    const hit = (rows ?? []).find((r) => new RegExp(`\\b${r.symbol.toLowerCase()}\\b`).test(text));
-    router.push(hit ? `/token/${hit.symbol.toLowerCase()}` : "/feed");
+    const q = ask.trim();
+    if (!q) return;
+    setAsking(true);
+    setAskErr(null);
+    setAnswer(null);
+    try {
+      const res = await postJson<AskResponse>("/v1/ask", { question: q });
+      setAnswer(res);
+    } catch (err) {
+      setAskErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAsking(false);
+    }
   };
 
   const placeholderSymbol = featured?.symbol.toLowerCase() ?? "tsla";
@@ -319,7 +380,7 @@ export default function LandingPage() {
             observation on-chain. you verify it against the blockchain. you do not trust morrow.
           </p>
 
-          <form className="ask" onSubmit={submitAsk}>
+          <form className="ask" onSubmit={(e) => void submitAsk(e)}>
             <span className="ask-label">ask</span>
             <div className="ask-field">
               <span className="prompt">›</span>
@@ -329,9 +390,13 @@ export default function LandingPage() {
                 placeholder={`what is ${placeholderSymbol} worth right now`}
                 aria-label="ask a token"
               />
-              <button type="submit">ask →</button>
+              <button type="submit" disabled={asking}>
+                {asking ? "asking" : "ask →"}
+              </button>
             </div>
           </form>
+
+          <AskAnswer asking={asking} answer={answer} error={askErr} />
 
           <div className="meta-row">
             {rows ? (

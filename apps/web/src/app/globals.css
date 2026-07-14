@@ -281,6 +281,51 @@ p.lead {
   max-width: 660px;
 }
 
+/* ---- ask answer card (landing) ---- */
+.ask-answer {
+  margin-top: 20px;
+  max-width: 660px;
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--forest);
+  background: var(--surface);
+  padding: 16px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ask-answer.thinking {
+  color: var(--text-dim);
+  border-left-color: var(--hairline);
+  font-style: italic;
+}
+.ask-answer.refuse {
+  border-left-color: var(--text-faint);
+  background: var(--surface-band);
+}
+.ask-answer.fail {
+  border-left-color: var(--ink);
+}
+.ask-answer .a-head {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.ask-answer .a-body {
+  color: var(--text-body);
+}
+.ask-answer.refuse .a-head {
+  color: var(--text-dim);
+}
+.ask-answer .a-prov {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ask-answer .a-prov a {
+  color: var(--forest-italic);
+}
+
 /* ================= LANDING ================= */
 .hero {
   flex: 1;

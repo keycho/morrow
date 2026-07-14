@@ -682,6 +682,29 @@ export const baseline = {
 } as const;
 
 // ---------------------------------------------------------------------------
+// data retention. morrow writes ~17k raw observations and ~9k proxy ticks a
+// day, forever, which fills the supabase free tier in a few months. these rows
+// are raw and reconstructable, so they can be pruned once nothing needs them.
+// the permanent record — fair_values, commits, anchors, receipts — is never
+// pruned here.
+//
+// OFF by default. to enable the scheduled prune, set MORROW_RETENTION_ENABLED
+// =true on the indexer service. it then runs once a day.
+// ---------------------------------------------------------------------------
+
+export const retention = {
+  enabled: envBool("MORROW_RETENTION_ENABLED", false),
+  // keep raw observations at least the twap window plus this safety margin, so
+  // any cycle that could still read them has them. default 48h of slack on top
+  // of the 1h window.
+  observationsMarginHours: envNum("MORROW_RETENTION_OBS_MARGIN_HOURS", 48),
+  // keep proxy ticks this many days. they must outlive the close baseline the
+  // drift model reads at each 16:00 et close, which can be a long weekend old,
+  // so the practical floor is about a week; default two weeks of slack.
+  proxyTicksDays: envNum("MORROW_RETENTION_PROXY_TICKS_DAYS", 14),
+} as const;
+
+// ---------------------------------------------------------------------------
 // discovery. thresholds for scripts/discover-pools.ts when it selects a pool
 // across venues.
 // ---------------------------------------------------------------------------

@@ -273,6 +273,16 @@ that happens.
   optionally `MORROW_POLL_MS`, `MORROW_CYCLE_SECONDS`,
   `MORROW_TWAP_WINDOW_SECONDS`. the indexer also generates the weekly receipt
   and pages the ops channel.
+- data retention: the indexer writes ~17k raw observations and ~9k proxy ticks
+  a day (at the 30s poll), forever, so the two raw tables grow ~150 mb/month
+  and fill the supabase free tier (500 mb) in roughly three months. the
+  permanent record (fair_values, commits, anchors, receipts) is small, ~12
+  mb/month. to bound the raw tables, set `MORROW_RETENTION_ENABLED=true`: a
+  daily prune then keeps observations for the twap window plus a margin
+  (`MORROW_RETENTION_OBS_MARGIN_HOURS`, default 48) and proxy ticks for
+  `MORROW_RETENTION_PROXY_TICKS_DAYS` (default 14, long enough to outlive the
+  close baseline), and never touches the permanent record. with it on, the raw
+  tables cap near ~30 mb and only the permanent record grows.
 
 8.2 api (public)
 - build: `pnpm install --frozen-lockfile`

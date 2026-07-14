@@ -272,6 +272,18 @@ export async function pruneOldHeartbeats(): Promise<void> {
   await db().query(`delete from heartbeats where ts < now() - interval '14 days'`);
 }
 
+// retention prunes. these delete only raw, reconstructable rows; the permanent
+// record (fair_values, commits, anchors, receipts) is never touched here.
+export async function pruneObservations(before: Date): Promise<number> {
+  const res = await db().query(`delete from observations where ts < $1`, [before]);
+  return res.rowCount ?? 0;
+}
+
+export async function pruneProxyTicks(before: Date): Promise<number> {
+  const res = await db().query(`delete from proxy_ticks where ts < $1`, [before]);
+  return res.rowCount ?? 0;
+}
+
 // --- reads used by the engine cycle ----------------------------------------
 
 export interface ObservationForEngine {

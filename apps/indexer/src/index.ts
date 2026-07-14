@@ -40,6 +40,7 @@ import { maybeRunCycle } from "./cycle.js";
 import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publisher.js";
 import { runAnchorScheduler } from "./anchors.js";
 import { checkCloseBaseline } from "./baseline.js";
+import { runRetention } from "./retention.js";
 import { maybeGenerateReceipt } from "./receipts.js";
 import { maybeRunDiscovery } from "./discovery.js";
 import { OpsAlerter, logTransport, makeTelegramTransport } from "@morrow/telegram/ops";
@@ -258,12 +259,17 @@ async function tick(): Promise<void> {
   const ok = errors.length === 0 && failedProxies.length < proxyResults.length;
   await writeHeartbeat("indexer", ok, detail);
 
-  // opportunistic daily prune
+  // opportunistic daily prune: heartbeats always, then the config-gated data
+  // retention prune (off by default; deletes only raw observations and proxy
+  // ticks, never the permanent record).
   const today = new Date().toISOString().slice(0, 10);
   if (today !== lastPrunedDay) {
     lastPrunedDay = today;
     await pruneOldHeartbeats().catch((err) =>
       log.warn("heartbeat prune failed", { message: String(err) })
+    );
+    await runRetention(Date.now()).catch((err) =>
+      log.warn("retention prune failed", { message: String(err) })
     );
   }
 

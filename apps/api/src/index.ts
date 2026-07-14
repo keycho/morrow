@@ -45,7 +45,22 @@ async function main(): Promise<void> {
     trustProxy: true,
   });
 
-  await app.register(cors, { origin: api.corsOrigin });
+  // cross-origin policy: allow only the origins configured in CORS_ORIGINS
+  // (the vercel frontend). requests without an Origin header (curl, server to
+  // server, same origin) are allowed; unknown browser origins are denied by
+  // returning no cors headers, so the browser blocks the response. a lone "*"
+  // in the list reflects any origin and is a dev-only escape hatch.
+  const corsAllowlist = new Set(api.corsOrigins);
+  const corsAllowAll = corsAllowlist.has("*");
+  const corsOrigin = (
+    origin: string | undefined,
+    cb: (err: Error | null, allow: boolean) => void
+  ): void => {
+    if (corsAllowAll) return cb(null, true);
+    if (!origin) return cb(null, true); // non-browser or same-origin caller
+    cb(null, corsAllowlist.has(origin.replace(/\/+$/, "")));
+  };
+  await app.register(cors, { origin: corsOrigin });
 
   // ops alerter: logs and pages the private telegram ops channel.
   const alerter = new OpsAlerter(ops.alertCooldownMs, [

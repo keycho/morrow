@@ -278,7 +278,8 @@ that happens.
 - build: `pnpm install --frozen-lockfile`
 - start: `pnpm --filter @morrow/api start`
 - env: `DATABASE_URL`, `ADMIN_TOKEN`, `API_PORT` (or let it read railway's
-  injected `PORT`), `API_CORS_ORIGIN` (your vercel domain),
+  injected `PORT`), `CORS_ORIGINS` (your vercel domain; comma-separated,
+  empty denies all cross-origin browser requests),
   `MORROW_COMMITS_ADDRESS`, `MORROW_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`,
   `TELEGRAM_OPS_CHAT_ID`, `X402_ENABLED` when ready
 

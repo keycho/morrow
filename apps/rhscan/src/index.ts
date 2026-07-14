@@ -3,11 +3,12 @@
 //   backfill  fill the recent window via the work queue, then exit
 //   tail      follow the head with reorg handling (runs forever)
 //   tokens    resolve token metadata (runs forever)
-//   prune     roll the window forward on a schedule (runs forever)
-//   both      backfill + tail + tokens + prune together (default)
+//   prune     roll the window forward by dropping partitions (runs forever)
+//   holders   hydrate token holders and maintain stats (runs forever)
+//   both      all of the above plus the partition maintainer (default)
 //
-// the cold-path resolver (resolve.ts) is a library the frontend calls, not a
-// worker, so it is not started here.
+// the cold-path resolver (resolve.ts) and the holders read helpers are libraries
+// the frontend calls, not workers.
 //
 // migrations run first so a single railway process is self-contained.
 
@@ -16,6 +17,8 @@ import { runBackfill } from "./backfill.js";
 import { runTail } from "./tail.js";
 import { runTokens } from "./tokens.js";
 import { runPrune } from "./prune.js";
+import { runHolders } from "./holders.js";
+import { runPartitionMaintainer } from "./partitions.js";
 import { closeDb } from "./db.js";
 import { log } from "./log.js";
 
@@ -47,10 +50,15 @@ async function main(): Promise<void> {
   if (mode === "tail" || mode === "both") tasks.push(runTail(stopped));
   if (mode === "tokens" || mode === "both") tasks.push(runTokens(stopped));
   if (mode === "prune" || mode === "both") tasks.push(runPrune(stopped));
+  if (mode === "holders" || mode === "both") tasks.push(runHolders(stopped));
+  // the partition maintainer runs alongside anything that writes near the head.
+  if (mode === "tail" || mode === "backfill" || mode === "both") {
+    tasks.push(runPartitionMaintainer(stopped));
+  }
 
   if (tasks.length === 0) {
     throw new Error(
-      `unknown MODE '${mode}', expected backfill|tail|both|tokens|prune`,
+      `unknown MODE '${mode}', expected backfill|tail|both|tokens|prune|holders`,
     );
   }
 

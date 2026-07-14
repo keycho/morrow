@@ -23,6 +23,7 @@ import {
   WINDOW_FLOOR_KEY,
   BACKFILL_FLOOR_KEY,
 } from "./window.js";
+import { ensurePartitions } from "./partitions.js";
 
 const RANGE_SIZE = Number(process.env.RANGE_SIZE ?? 200);
 const CONCURRENCY = Number(process.env.CONCURRENCY ?? 50);
@@ -225,6 +226,9 @@ export async function runBackfill(stopped: () => boolean = () => false): Promise
     `window ${WINDOW_DAYS} days: floor block ${windowFloor} (grid ${gridFloor}), head ${head}, ${windowBlocks} blocks in window`,
   );
   await setSyncValue(WINDOW_FLOOR_KEY, windowFloor);
+
+  // partitions must exist before any range is written into them.
+  await ensurePartitions(gridFloor, head);
 
   await seedRanges(gridFloor, head);
   await reclaimStale();

@@ -11,6 +11,7 @@ import { getBlockByNumber, getBlockReceipts, getHead } from "./chain.js";
 import { sql, writeBlocks, type Executor } from "./db.js";
 import { transformBlock } from "./transform.js";
 import { log } from "./log.js";
+import { ensurePartitions } from "./partitions.js";
 
 const POLL_MS = Number(process.env.POLL_MS ?? 1000);
 const TAIL_BATCH = Number(process.env.TAIL_BATCH ?? 100);
@@ -54,15 +55,33 @@ async function initSyncState(): Promise<void> {
   log.info(`tail initialized at head ${head}`);
 }
 
-// delete every row for blocks above n across all tables, then rewind sync_state.
+// delete every window row for blocks above n across all tables, rewind
+// sync_state, and invalidate balances for any token whose transfers were rolled
+// back so it re-hydrates from scratch (reversing incremental deltas exactly is
+// not worth it; re-hydration is authoritative). cold_* rows are untouched.
 async function deleteAbove(n: number): Promise<void> {
   await sql.begin(async (tx) => {
+    // tokens touched by the rolled-back range, captured before the delete.
+    const affected = await tx<{ token_address: string }[]>`
+      select distinct token_address from token_transfers where block_number > ${n}
+    `;
     await tx`delete from address_transactions where block_number > ${n}`;
     await tx`delete from token_transfers where block_number > ${n}`;
     await tx`delete from logs where block_number > ${n}`;
+    await tx`delete from tx_locations where block_number > ${n}`;
     await tx`delete from transactions where block_number > ${n}`;
+    await tx`delete from block_locations where block_number > ${n}`;
     await tx`delete from contracts where creation_block > ${n}`;
     await tx`delete from blocks where number > ${n}`;
+
+    if (affected.length > 0) {
+      // drop hydration state so these tokens re-hydrate from scratch (delete
+      // token_hydration removes the hydrated_at_block that gates incremental
+      // deltas, and eager enqueue will re-queue them).
+      const addrs = affected.map((a) => a.token_address);
+      await tx`delete from token_balances where token_address in ${tx(addrs)}`;
+      await tx`delete from token_hydration where token_address in ${tx(addrs)}`;
+    }
     await setLast(tx, n);
   });
 }
@@ -97,6 +116,9 @@ async function processBatch(
 ): Promise<"ok" | "reorg"> {
   const nums: number[] = [];
   for (let n = from; n <= to; n += 1) nums.push(n);
+
+  // make sure partitions exist for this range before writing into them.
+  await ensurePartitions(from, to);
 
   const [blocks, receipts] = await Promise.all([
     Promise.all(nums.map((n) => getBlockByNumber(n))),

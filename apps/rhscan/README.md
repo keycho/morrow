@@ -22,11 +22,12 @@ deliberate product decision, built for, not worked around.
   `WINDOW_DAYS` of now, found by binary search) up to head, and claims ranges
   newest-first so the explorer is useful within minutes.
 - **tail** follows the head with reorg handling.
-- **pruner** rolls the window forward on a schedule, deleting everything below
-  the recomputed floor so disk stays steady-state.
+- **pruner** rolls the window forward by dropping whole partitions once they fall
+  below the floor (see partitioning below).
 - **resolver** (`src/resolve.ts`) is a library, not a worker. it reads postgres
-  first, falls back to live rpc, and caches rpc results back into the same tables
-  marked `cold` so the pruner leaves them and repeat lookups are fast.
+  first, falls back to live rpc, and caches rpc results in separate `cold_*`
+  tables so repeat lookups are fast and the pruner never touches them.
+- **holders** hydrate token balances on demand (see tokens and holders below).
 
 two watermarks are published to `sync_state` for the frontend:
 
@@ -35,88 +36,113 @@ two watermarks are published to `sync_state` for the frontend:
   which every range is done. **this is the number the ui should trust** as
   "fully indexed from here up", not the window floor.
 
-## the numbers (measured on a 1500-block recent sample)
+## the shape of the chain (measured, day 3)
 
-storage was measured, not guessed: rows written and `pg_total_relation_size`
-(heap plus read indexes) per table, divided by blocks.
+the earlier 520 GB / 46 GB/day estimate rested on a sample near the head. a
+200-block sample spread evenly across the chain's whole life (`pnpm sample`)
+tells a different story. block time is sub-second and the 1-second timestamp
+resolution only resolves it across a wide block span, so block time is measured
+per decile from the decile's endpoints.
 
-- **~54 KB per block**, ~106 rows per block, over recent (busy) blocks.
-  per block: 11.3 txns, 47.5 logs, 23.2 token transfers, 22.6 address rows.
-- the chain launched 2026-04-30 and was ~75 days old at measurement, so **a
-  90-day window today is essentially the whole chain, about 9.6M blocks, roughly
-  520 GB** with read indexes.
-- recent block time is about **0.10 s/block**, so the chain produces roughly
-  **860k blocks/day, about 46 GB/day**. once the chain is older than 90 days, a
-  steady-state 90-day window would be about 77M blocks, **roughly 4.2 TB**.
+| decile | dates | txns/blk | logs/blk | bytes/blk | blk_s | GB/day |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 04-30..07-01 | 2.2 | 2.4 | 5.6k | 5.85 | 0.1 |
+| 2 | 07-02..07-03 | 2.9 | 5.3 | 8.8k | 0.15 | 5.4 |
+| 3 | 07-03..07-05 | 2.9 | 3.5 | 7.7k | 0.20 | 3.4 |
+| 4 | 07-05..07-07 | 2.3 | 3.7 | 6.7k | 0.19 | 3.2 |
+| 5 | 07-07..07-09 | 7.8 | 16.4 | 25.5k | 0.10 | 22.5 |
+| 6 | 07-09..07-10 | 9.9 | 19.1 | 31.1k | 0.10 | 27.4 |
+| 7 | 07-10..07-11 | 14.4 | 78.8 | 80.5k | 0.10 | 71.1 |
+| 8 | 07-11..07-12 | 10.0 | 39.0 | 45.1k | 0.10 | 39.8 |
+| 9 | 07-12..07-13 | 9.2 | 31.6 | 37.7k | 0.10 | 33.3 |
+| 10 | 07-13..07-14 | 7.2 | 25.9 | 30.4k | 0.10 | 26.8 |
 
-**recommendation: 90 days is far over the 150 GB ceiling, drop it hard.** at the
-current cadence:
+what this changes:
 
-| target | window | blocks |
-| --- | --- | --- |
-| ~50 GB  | ~1 day  | ~0.9M |
-| ~100 GB | ~2 days | ~1.9M |
-| ~150 GB | ~3 days | ~2.8M |
+- **the 46 GB/day figure does not survive.** the head (decile 10) is ~27 GB/day,
+  and the rate is volatile: it ranged 0.1 to 71 GB/day over the chain's life and
+  spiked to 71 around 07-10. the head is not the peak, decile 7 was.
+- block time is **~0.10 s since early july** (10 blocks/sec), ~0.67 s lifetime.
+  that is a genuinely busy chain: 7-14 txns/block at 10 blocks/sec is ~70-140
+  tps sustained for over a week, not a one-afternoon artifact.
+- the whole chain (9.6M blocks) is about **270 GB**, not 520. head-density
+  extrapolation overcounted.
 
-one caveat to decide on: the pruner refuses `WINDOW_DAYS` under 7 as a safety
-floor, but 7 days is already ~326 GB at this cadence. to land under 150 GB you
-either lower that guard and pass a fractional value like `WINDOW_DAYS=3`, or we
-switch the window knob to hours. say which and it is a small change. block rate
-this high may also be a burst; if it settles, GB/day drops proportionally.
+sizing at the recent rate (~27-40 GB/day):
 
-**backfill wall-clock** is bound by rpc throughput (2 calls per block:
-`eth_getBlockByNumber` plus `eth_getBlockReceipts`, both batched). i could not
-measure a paid provider from here (the public endpoint rate-limits), so, at a
-sustained requests/sec S, blocks/sec is S/2:
+| target | window |
+| --- | --- |
+| ~50 GB  | ~1.5 days |
+| ~100 GB | ~3 days |
+| ~150 GB | ~4-5 days |
 
-| provider throughput | 3-day window (2.8M blk) | whole chain (9.6M blk) |
-| --- | --- | --- |
-| 1000 req/s | ~1.5 h | ~5.3 h |
-| 3000 req/s | ~31 min | ~1.8 h |
-| 6000 req/s | ~15 min | ~53 min |
+**recommended default `WINDOW_DAYS=7`** (~200-280 GB, within the decile-7 spike),
+which the `.env.example` now uses. if 150 GB is a hard ceiling, use ~4 days, but
+the pruner refuses under 7 as a safety floor, so to go lower either relax that
+floor or switch the knob to hours. with partition-drop pruning there is no bloat,
+so on-disk size is just window content plus a partition of slack.
 
-## load sequence
+**backfill wall-clock** is rpc-bound (2 batched calls/block). at a sustained S
+req/s, blocks/s is S/2: a 7-day window (~6M blocks) is ~1.7 h at 1000 req/s,
+~33 min at 3000, ~17 min at 6000.
 
-read-path indexes are built separately with `create index concurrently` so the
-write-bound bulk backfill is not slowed by index maintenance. `0001_init.sql`
-holds only tables, primary keys and operational indexes.
+## partitioning
 
-```
-pnpm install                                   # from the repo root
-cp apps/rhscan/.env.example apps/rhscan/.env    # fill DATABASE_URL, RPC_URL, WINDOW_DAYS
+the window tables (`blocks`, `transactions`, `logs`, `token_transfers`,
+`address_transactions`) are `partition by range (block_number)` in
+`PARTITION_SIZE` chunks (default 500,000). the partition maintainer creates
+partitions ahead of the head so the tail never writes into a missing range, and
+the pruner drops whole partitions below the floor: instant, disk straight back to
+the os, zero vacuum work. delete-based pruning is gone.
 
-# from apps/rhscan (or pnpm --filter @fletch/rhscan <script> from the root)
-pnpm migrate           # create tables (no read indexes yet)
-pnpm backfill          # seed the window and fill it, newest-first
-pnpm indexes:create    # build read indexes concurrently once caught up
-pnpm dev               # MODE=both: backfill + tail + tokens + prune
+partitioning breaks two things, both solved:
 
-pnpm indexes:drop      # before a fresh bulk reload, to keep it write-bound
-```
+1. a unique key on a partitioned table must include the partition key, so
+   `transactions` cannot key on `hash` and `blocks` cannot be found by hash
+   without scanning every partition. `tx_locations` and `block_locations` are
+   tiny unpartitioned `hash -> block_number` maps written in the same
+   transaction, so a hash lookup is one small hit then a partition-pruned read.
+   confirmed with `explain`: a block-range query and a tx-hash lookup each scan a
+   single partition.
+2. the cold cache must outlive the window, so it lives in unpartitioned `cold_*`
+   tables, never dropped by the pruner.
 
-`pnpm dev` runs migrations first (the process also migrates itself on boot),
-then starts in `both` mode. read indexes persist across runs; you only build
-them once.
+## tokens and holders
 
-## pruning and disk
+with a window measured in days, a token's transfer history predates the window,
+so holders cannot come from indexed transfers. instead each token is hydrated on
+demand (`src/holders.ts`): pull that one token's whole `Transfer` history via
+chunked `eth_getLogs` (starting at its known deployment block when we have it,
+shrinking the chunk on the provider's 10000-log cap), replay to a balance set,
+and store it in `token_balances`. hydration is triggered lazily on first request
+and eagerly for the top `EAGER_TOP_N` tokens by windowed transfer count; a page
+never blocks on it and returns a `hydrating` flag.
 
-the pruner deletes below the window floor in block-number batches inside
-transactions (never one giant delete, never locks the tail out), and runs
-`vacuum` (not `full`) after each batch group. postgres does not return the freed
-disk to the os, it reuses it for new rows, which is exactly right for a
-steady-state window: the on-disk size plateaus rather than growing. `tokens` and
-`contracts` are never pruned (small, keyed by address, useful forever). cold
-rows (rpc lookups cached back in) are never pruned.
+after hydration, balances are maintained incrementally from windowed transfers.
+**the incremental path applies deltas only for transfer rows actually inserted**
+(`insert ... on conflict do nothing returning *`), never from the input array, so
+a retried backfill range applies nothing (all conflicts, nothing returned) and a
+balance is never double-counted. the zero address is stored as a real row (mint
+and burn) and excluded from holder counts and top-holder lists at read time.
+
+`token_stats` (holder_count, transfer_count, first_transfer_block, deployer, its
+balance share, top10 share) is refreshed periodically. the new-token feed and
+"what else did this deployer launch" come from `contracts` (a deployment is a tx
+with no `to` whose receipt carried a `contract_address`). facts only, no scoring.
+
+`pnpm verify:balances` proves the replay: for N tokens it compares the top holder
+balances against live `balanceOf` via multicall3, at the hydrated block so an
+actively-traded token's real-time movement is not mistaken for drift.
 
 ## cold-path resolver
 
 `src/resolve.ts` exports `resolveTx`, `resolveBlock`, `resolveAddress` and a
 `resolveQuery` dispatcher. every result carries `source: 'indexed' | 'rpc'` for
-debugging (the ui does not show it). tx and block fall back to rpc and cache the
-whole containing block cold. an address returns live header data (balance, nonce,
-code) plus a windowed transaction list from the index, always with
-`historyTruncated: true` and the window floor, because an address's full history
-cannot be reconstructed from rpc without an indexer.
+debugging (the ui does not show it). a hash lookup checks the window map, then the
+cold cache, then live rpc, caching the whole containing block into `cold_*`. an
+address returns live header data (balance, nonce, code) plus a windowed
+transaction list from the index, always with `historyTruncated: true` and the
+window floor, because an address's full history cannot be reconstructed from rpc.
 
 ## rpc probe results (day 1)
 

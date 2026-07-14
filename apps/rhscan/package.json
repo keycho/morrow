@@ -11,11 +11,12 @@
     "backfill": "MODE=backfill tsx src/index.ts",
     "tail": "MODE=tail tsx src/index.ts",
     "prune": "MODE=prune tsx src/index.ts",
-    "indexes:create": "tsx src/indexes.ts create",
-    "indexes:drop": "tsx src/indexes.ts drop",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "test": "echo no unit tests yet, transform decoding is validated against live rpc"
+    "test": "echo no unit tests yet, transform decoding is validated against live rpc",
+    "sample": "tsx src/sample.ts",
+    "holders": "MODE=holders tsx src/index.ts",
+    "verify:balances": "tsx src/verify.ts"
   },
   "dependencies": {
     "pino": "^10.3.0",

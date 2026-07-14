@@ -75,8 +75,49 @@ export interface BlockRows {
 }
 
 // keccak256("Transfer(address,address,uint256)")
-const TRANSFER_TOPIC =
+export const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+export interface DecodedTransfer {
+  from: string;
+  to: string;
+  value: string | null;
+  tokenId: string | null;
+  tokenType: "erc20" | "erc721";
+}
+
+// decode a Transfer log's participants and amount. disambiguation is on
+// indexed-arg count: from, to and an indexed tokenId means erc-721 (topics
+// length 4); from and to with the value in data means erc-20 (topics length 3).
+// this is the single source of Transfer decoding, reused by transform and by
+// token hydration.
+export function decodeTransferLog(
+  topics: readonly Hex[],
+  data: Hex,
+): DecodedTransfer | null {
+  if (topics[0]?.toLowerCase() !== TRANSFER_TOPIC) return null;
+  if (topics.length === 4) {
+    return {
+      from: topicToAddress(topics[1]!),
+      to: topicToAddress(topics[2]!),
+      value: null,
+      tokenId: BigInt(topics[3]!).toString(),
+      tokenType: "erc721",
+    };
+  }
+  if (topics.length === 3) {
+    const word = data && data.length >= 66 ? data.slice(0, 66) : null;
+    if (word == null) return null;
+    return {
+      from: topicToAddress(topics[1]!),
+      to: topicToAddress(topics[2]!),
+      value: BigInt(word as Hex).toString(),
+      tokenId: null,
+      tokenType: "erc20",
+    };
+  }
+  return null;
+}
 
 // column order for each table's insert. method_id is a generated column and is
 // deliberately excluded.
@@ -286,41 +327,18 @@ function decodeTransfer(
   blockNumber: string,
   ts: Date,
 ): Row | null {
-  if (lg.topics[0]?.toLowerCase() !== TRANSFER_TOPIC) return null;
-  const base = {
+  const d = decodeTransferLog(lg.topics, lg.data);
+  if (!d) return null;
+  return {
     block_number: blockNumber,
     log_index: num(lg.logIndex),
     tx_hash: lg.transactionHash.toLowerCase(),
     block_timestamp: ts,
     token_address: lg.address.toLowerCase(),
+    from_address: d.from,
+    to_address: d.to,
+    value: d.value,
+    token_id: d.tokenId,
+    token_type: d.tokenType,
   };
-
-  if (lg.topics.length === 4) {
-    const [, from, to, tokenId] = lg.topics as [Hex, Hex, Hex, Hex];
-    return {
-      ...base,
-      from_address: topicToAddress(from),
-      to_address: topicToAddress(to),
-      value: null,
-      token_id: BigInt(tokenId).toString(),
-      token_type: "erc721",
-    };
-  }
-
-  if (lg.topics.length === 3) {
-    const [, from, to] = lg.topics as [Hex, Hex, Hex];
-    // value is the first 32-byte word of data.
-    const word = lg.data && lg.data.length >= 66 ? lg.data.slice(0, 66) : null;
-    if (word == null) return null;
-    return {
-      ...base,
-      from_address: topicToAddress(from),
-      to_address: topicToAddress(to),
-      value: BigInt(word as Hex).toString(),
-      token_id: null,
-      token_type: "erc20",
-    };
-  }
-
-  return null;
 }

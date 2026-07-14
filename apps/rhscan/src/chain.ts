@@ -215,3 +215,31 @@ export function getTransactionCount(address: string): Promise<`0x${string}`> {
 export function getCode(address: string): Promise<`0x${string}`> {
   return rpc<`0x${string}`>("eth_getCode", [address, "latest"]);
 }
+
+export interface RpcLog {
+  address: `0x${string}`;
+  topics: `0x${string}`[];
+  data: `0x${string}`;
+  blockNumber: `0x${string}`;
+  logIndex: `0x${string}`;
+  transactionHash: `0x${string}`;
+}
+
+// eth_getLogs for one address over a block range, one topic filter. used by
+// token hydration to pull a single token's whole Transfer history in chunks.
+export function getLogs(params: {
+  address: string;
+  fromBlock: number;
+  toBlock: number;
+  topics?: (string | null)[];
+}): Promise<RpcLog[]> {
+  const toHexN = (n: number): `0x${string}` => `0x${n.toString(16)}`;
+  return rpc<RpcLog[]>("eth_getLogs", [
+    {
+      address: params.address,
+      fromBlock: toHexN(params.fromBlock),
+      toBlock: toHexN(params.toBlock),
+      ...(params.topics ? { topics: params.topics } : {}),
+    },
+  ]);
+}

@@ -20,7 +20,7 @@ import {
   getTransactionByHash,
   getTransactionCount,
 } from "./chain.js";
-import { sql, writeBlocks } from "./db.js";
+import { sql, writeColdBlocks } from "./db.js";
 import { transformBlock, type Row } from "./transform.js";
 import { getSyncValue, WINDOW_FLOOR_KEY } from "./window.js";
 
@@ -184,45 +184,70 @@ function blockView(row: Row): BlockView {
   };
 }
 
-// fetch a full block plus receipts, transform, and cache it cold. shared by the
-// tx and block rpc fallbacks so a single lookup warms the whole block.
+// fetch a full block plus receipts, transform, and cache it in the cold_* tables
+// (separate lifecycle from the window, never pruned). shared by the tx and block
+// rpc fallbacks so a single lookup warms the whole block.
 async function cacheColdBlock(blockNumber: number, rawBlock?: Row) {
-  const block =
-    rawBlock ?? (await getBlockByNumberOrNull(blockNumber));
+  const block = rawBlock ?? (await getBlockByNumberOrNull(blockNumber));
   if (!block) return null;
   const receipts = await getBlockReceipts(blockNumber);
   const rows = transformBlock(block as never, receipts);
-  await sql.begin((tx) => writeBlocks(tx, [rows], { cold: true }));
+  await sql.begin((tx) => writeColdBlocks(tx, [rows]));
   return rows;
+}
+
+// read a tx and its logs/transfers from a set of tables, given the block number.
+async function readTxFrom(
+  txTable: string,
+  logTable: string,
+  transferTable: string,
+  h: string,
+  bn: number,
+): Promise<TxResult> {
+  const rows = await sql<Row[]>`select * from ${sql(txTable)} where block_number = ${bn} and hash = ${h}`;
+  const logs = await sql<Row[]>`select * from ${sql(logTable)} where tx_hash = ${h} order by log_index`;
+  const transfers = await sql<Row[]>`select * from ${sql(transferTable)} where tx_hash = ${h} order by log_index`;
+  return {
+    source: "indexed",
+    found: rows[0] != null,
+    tx: rows[0] ? txView(rows[0]) : null,
+    logs: logs.map(logView),
+    tokenTransfers: transfers.map(transferView),
+  };
 }
 
 export async function resolveTx(hash: string): Promise<TxResult> {
   const h = hash.toLowerCase();
 
-  const rows = await sql<Row[]>`select * from transactions where hash = ${h}`;
-  if (rows[0]) {
-    const logs = await sql<Row[]>`select * from logs where tx_hash = ${h} order by log_index`;
-    const transfers = await sql<Row[]>`select * from token_transfers where tx_hash = ${h} order by log_index`;
-    return {
-      source: "indexed",
-      found: true,
-      tx: txView(rows[0]),
-      logs: logs.map(logView),
-      tokenTransfers: transfers.map(transferView),
-    };
+  // 1. window: tx_locations gives block_number, then a partition-pruned read.
+  const loc = await sql<{ block_number: string }[]>`
+    select block_number from tx_locations where hash = ${h}
+  `;
+  if (loc[0]) {
+    return readTxFrom("transactions", "logs", "token_transfers", h, Number(loc[0].block_number));
   }
 
+  // 2. cold cache.
+  const cold = await sql<Row[]>`select block_number from cold_transactions where hash = ${h}`;
+  if (cold[0]) {
+    return readTxFrom(
+      "cold_transactions",
+      "cold_logs",
+      "cold_token_transfers",
+      h,
+      Number(cold[0].block_number),
+    );
+  }
+
+  // 3. live rpc, then cache the whole block cold.
   const raw = await getTransactionByHash(h);
   if (!raw || raw.blockNumber == null) {
     return { source: "rpc", found: false, tx: null, logs: [], tokenTransfers: [] };
   }
   const blockNumber = Number(BigInt(raw.blockNumber));
   const cached = await cacheColdBlock(blockNumber);
-  if (!cached) {
-    return { source: "rpc", found: false, tx: null, logs: [], tokenTransfers: [] };
-  }
-  const txRow = cached.transactions.find((t) => t.hash === h);
-  if (!txRow) {
+  const txRow = cached?.transactions.find((t) => t.hash === h);
+  if (!cached || !txRow) {
     return { source: "rpc", found: false, tx: null, logs: [], tokenTransfers: [] };
   }
   return {
@@ -234,26 +259,47 @@ export async function resolveTx(hash: string): Promise<TxResult> {
   };
 }
 
+async function readBlockFrom(
+  blockTable: string,
+  txTable: string,
+  bn: number,
+): Promise<BlockResult> {
+  const rows = await sql<Row[]>`select * from ${sql(blockTable)} where number = ${bn}`;
+  if (!rows[0]) return { source: "rpc", found: false, block: null, transactions: [] };
+  const txs = await sql<Row[]>`select * from ${sql(txTable)} where block_number = ${bn} order by tx_index`;
+  return { source: "indexed", found: true, block: blockView(rows[0]), transactions: txs.map(txView) };
+}
+
 export async function resolveBlock(idOrHash: string | number): Promise<BlockResult> {
   const isHash = typeof idOrHash === "string" && idOrHash.startsWith("0x");
-  const num = isHash ? null : Number(idOrHash);
 
-  const rows = isHash
-    ? await sql<Row[]>`select * from blocks where hash = ${String(idOrHash).toLowerCase()}`
-    : await sql<Row[]>`select * from blocks where number = ${num}`;
-  if (rows[0]) {
-    const bn = Number(rows[0].number);
-    const txs = await sql<Row[]>`select * from transactions where block_number = ${bn} order by tx_index`;
-    return { source: "indexed", found: true, block: blockView(rows[0]), transactions: txs.map(txView) };
+  // resolve to a block number (window map, then cold, then rpc by hash).
+  let bn: number | null = null;
+  if (isHash) {
+    const h = String(idOrHash).toLowerCase();
+    const loc = await sql<{ block_number: string }[]>`select block_number from block_locations where hash = ${h}`;
+    if (loc[0]) bn = Number(loc[0].block_number);
+    if (bn == null) {
+      const cold = await sql<Row[]>`select number from cold_blocks where hash = ${h}`;
+      if (cold[0]) bn = Number(cold[0].number);
+    }
+  } else {
+    bn = Number(idOrHash);
   }
 
+  if (bn != null) {
+    const win = await readBlockFrom("blocks", "transactions", bn);
+    if (win.found) return win;
+    const cold = await readBlockFrom("cold_blocks", "cold_transactions", bn);
+    if (cold.found) return cold;
+  }
+
+  // live rpc, then cache cold.
   const raw = isHash
     ? await getBlockByHash(String(idOrHash), true)
-    : await getBlockByNumberOrNull(num as number);
+    : await getBlockByNumberOrNull(bn as number);
   if (!raw) return { source: "rpc", found: false, block: null, transactions: [] };
-
-  const bn = Number(BigInt(raw.number));
-  const cached = await cacheColdBlock(bn, raw as unknown as Row);
+  const cached = await cacheColdBlock(Number(BigInt(raw.number)), raw as unknown as Row);
   if (!cached) return { source: "rpc", found: false, block: null, transactions: [] };
   return {
     source: "rpc",
@@ -276,13 +322,15 @@ export async function resolveAddress(address: string): Promise<AddressResult> {
   const isContract = code != null && code !== "0x";
   const codeSize = isContract ? (code.length - 2) / 2 : 0;
 
-  // the tx list comes only from the index and only covers the window.
+  // the tx list comes only from the index (window plus whatever the cold cache
+  // has warmed) and never from rpc, so it only covers the window and any looked
+  // up history. union both, newest first.
   const txns = await sql<Row[]>`
-    select block_number, tx_index, tx_hash, direction
-      from address_transactions
-     where address = ${a}
-     order by block_number desc, tx_index desc
-     limit ${ADDRESS_LIST_LIMIT}
+    select block_number, tx_index, tx_hash, direction from address_transactions where address = ${a}
+    union all
+    select block_number, tx_index, tx_hash, direction from cold_address_transactions where address = ${a}
+    order by block_number desc, tx_index desc
+    limit ${ADDRESS_LIST_LIMIT}
   `;
 
   let creation: AddressResult["creation"] = null;

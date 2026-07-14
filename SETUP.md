@@ -280,8 +280,18 @@ that happens.
 - env: `DATABASE_URL`, `ADMIN_TOKEN`, `API_PORT` (or let it read railway's
   injected `PORT`), `CORS_ORIGINS` (your vercel domain; comma-separated,
   empty denies all cross-origin browser requests),
-  `MORROW_COMMITS_ADDRESS`, `MORROW_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`,
-  `TELEGRAM_OPS_CHAT_ID`, `X402_ENABLED` when ready
+  `MORROW_COMMITS_ADDRESS` and `MORROW_CHAIN_ID` (these must match the indexer
+  so proofs advertise the right contract and chain to verify against),
+  `MORROW_EXPLORER_URL`, `TELEGRAM_OPS_BOT_TOKEN`, `TELEGRAM_OPS_CHAT_ID`,
+  `X402_ENABLED` when ready
+- env parity: on boot the api logs a warning naming any of these it is missing
+  (names only, never values), so a service deployed with a partial environment
+  is visible in the logs. give the api the same `DATABASE_URL`, chain address,
+  and chain id the indexer uses.
+- uptime: `GET /uptime` answers 200 while the indexer heartbeat is fresh and
+  503 the moment it goes stale. point an external monitor (healthchecks.io,
+  uptimerobot) at it to get an email when the indexer dies, with no telegram in
+  the loop. it is plaintext, unauthenticated, and exempt from the rate limiter.
 
 8.3 public alert bot (worker, no public port, optional)
 - start: `pnpm --filter @morrow/telegram start`

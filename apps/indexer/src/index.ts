@@ -39,6 +39,7 @@ import { mockBasePrices, mockPoolReading, mockProxyResults } from "./mock.js";
 import { maybeRunCycle } from "./cycle.js";
 import { publishCycle, reconcileCommits, checkPublisherBalance } from "./publisher.js";
 import { runAnchorScheduler } from "./anchors.js";
+import { checkCloseBaseline } from "./baseline.js";
 import { maybeGenerateReceipt } from "./receipts.js";
 import { maybeRunDiscovery } from "./discovery.js";
 import { OpsAlerter, logTransport, makeTelegramTransport } from "@morrow/telegram/ops";
@@ -191,6 +192,16 @@ async function tick(): Promise<void> {
     await runAnchorScheduler(now, alerter);
   } catch (err) {
     log.error("anchor scheduler pass failed", {
+      message: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // close-baseline check: page if a 16:00 et close passed with no proxy
+  // baseline captured (the drift model would silently read zero otherwise).
+  try {
+    await checkCloseBaseline(now, alerter);
+  } catch (err) {
+    log.error("close baseline check failed", {
       message: err instanceof Error ? err.message : String(err),
     });
   }

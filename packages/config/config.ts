@@ -38,6 +38,66 @@ function envBool(key: string, fallback: boolean): boolean {
   return raw === "1" || raw.toLowerCase() === "true";
 }
 
+// redaction. any string bound for a log line or a stored record runs through
+// this so a secret never lands in plaintext, in every logging path (the log
+// helpers call it at the boundary, so even a third-party error that embeds a
+// key is caught). it masks, in order:
+//   1. the exact values of secret env vars (the strongest guard: the literal
+//      value is caught wherever it appears, e.g. an alchemy key inside a viem
+//      error, or the finnhub key inside an anchor url),
+//   2. url userinfo (//user:pass@),
+//   3. provider path-style keys (/v2/<key>, /v3/<key>),
+//   4. common query-string keys (apikey, api_key, key, token, access_token).
+// it over-masks by design: a redacted log line is fine, a leaked key is not.
+
+const SECRET_ENV_NAMES = [
+  "DATABASE_URL",
+  "MORROW_RPC_URL",
+  "ANCHOR_API_KEY",
+  "PUBLISHER_PRIVATE_KEY",
+  "DEPLOYER_PRIVATE_KEY",
+  "ADMIN_TOKEN",
+  "TELEGRAM_OPS_BOT_TOKEN",
+  "TELEGRAM_ALERT_BOT_TOKEN",
+];
+
+// the concrete secret values to strip, longest first so a value that contains
+// another does not leave a tail. short values are skipped: masking a 3-char
+// string would mangle unrelated log text for no security gain.
+function secretValues(): { name: string; value: string }[] {
+  const out: { name: string; value: string }[] = [];
+  const seen = new Set<string>();
+  const consider = (name: string, value: string | undefined): void => {
+    if (!value || value.length < 8 || seen.has(value)) return;
+    seen.add(value);
+    out.push({ name, value });
+  };
+  for (const name of SECRET_ENV_NAMES) consider(name, process.env[name]);
+  for (const [name, value] of Object.entries(process.env)) {
+    if (/(_KEY|_SECRET|_TOKEN|PRIVATE_KEY|PASSWORD)$/i.test(name)) consider(name, value);
+  }
+  return out.sort((a, b) => b.value.length - a.value.length);
+}
+
+export function redactSecrets(input: string): string {
+  if (!input) return input;
+  let out = input;
+  // 1. literal secret values (split/join avoids any regex-escaping pitfalls).
+  for (const { name, value } of secretValues()) {
+    if (out.includes(value)) out = out.split(value).join(`[redacted:${name}]`);
+  }
+  // 2. url userinfo.
+  out = out.replace(/\/\/[^/@\s]+@/g, "//[redacted]@");
+  // 3. provider path-style keys (alchemy/infura style /v2/<key>, /v3/<key>).
+  out = out.replace(/\/(v2|v3)\/[A-Za-z0-9_-]{8,}/g, "/$1/[redacted]");
+  // 4. query-string api keys.
+  out = out.replace(
+    /([?&](?:api[_-]?key|apikey|key|token|access[_-]?token)=)[^&\s"']+/gi,
+    "$1[redacted]"
+  );
+  return out;
+}
+
 // comma-separated env var -> trimmed, de-duplicated list. entries have any
 // trailing slash stripped so a pasted "https://foo.app/" still matches the
 // slash-free Origin header the browser sends. empty when the var is unset.
@@ -596,6 +656,29 @@ export const dollarization = {
     retries: 2,
     stalenessMs: envNum("MORROW_ETHUSD_STALENESS_MS", 180_000),
   } as ProxySourceConfig,
+} as const;
+
+// ---------------------------------------------------------------------------
+// close-baseline monitoring. the drift model measures each proxy's move since
+// the last official close, so it needs a proxy tick captured at (or just
+// before) that close. if the indexer was down across the 16:00 et close there
+// is no baseline and drift silently reads zero, which quietly degrades the
+// off-hours number. after each close the indexer checks that a baseline landed
+// and pages if one did not.
+// ---------------------------------------------------------------------------
+
+export const baseline = {
+  // wait this long after the close before checking, so the tick straddling the
+  // close has time to be written.
+  graceMinutes: envNum("MORROW_BASELINE_GRACE_MINUTES", 20),
+  // the baseline tick must be no older than this before the close to count as
+  // captured. ticks land every ~30s, so a healthy indexer is well inside this;
+  // a gap this large means the worker was down across the close.
+  maxGapMinutes: envNum("MORROW_BASELINE_MAX_GAP_MINUTES", 20),
+  // only check closes this recent. past this window a missing baseline cannot
+  // be recovered and may predate this process (a cold start), so alerting is
+  // pointless; skip it rather than page about ancient history.
+  checkWindowMinutes: envNum("MORROW_BASELINE_CHECK_WINDOW_MINUTES", 90),
 } as const;
 
 // ---------------------------------------------------------------------------

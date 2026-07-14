@@ -35,6 +35,31 @@ function worst(subsystems: Subsystem[]): SubsystemStatus {
 const DAY_MS = 24 * 3600 * 1000;
 
 export function registerHealthRoutes(app: FastifyInstance): void {
+  // uptime probe for an external monitor (healthchecks.io, uptimerobot, ...).
+  // it answers 200 while the indexer is alive and 503 the moment its heartbeat
+  // goes stale, so a dead indexer trips the monitor and pages by email with no
+  // telegram in the loop. plaintext, no auth, allowlisted from the rate limiter.
+  app.get("/uptime", async (_req, reply) => {
+    const now = Date.now();
+    const indexer = (await latestHeartbeats()).find((h) => h.service === "indexer") ?? null;
+    const ageMs = indexer ? now - new Date(indexer.ts).getTime() : null;
+    const downThresholdMs = timing.heartbeatStaleMs * 5;
+    const alive = ageMs !== null && ageMs <= downThresholdMs;
+    void reply
+      .header("cache-control", "no-store")
+      .type("text/plain")
+      .code(alive ? 200 : 503)
+      .send(
+        ageMs === null
+          ? "down no indexer heartbeat recorded"
+          : alive
+            ? `ok indexer heartbeat ${Math.round(ageMs / 1000)}s ago`
+            : `down indexer heartbeat ${Math.round(ageMs / 1000)}s ago exceeds ${Math.round(
+                downThresholdMs / 1000
+              )}s`
+      );
+  });
+
   app.get("/health", async () => {
     const now = Date.now();
     const [heartbeats, newestFv, proxyTicks, newestAnchor, newestCommit] = await Promise.all([

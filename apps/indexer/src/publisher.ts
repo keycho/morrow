@@ -156,6 +156,13 @@ export async function publishCycle(outcome: CycleOutcome, alerter?: OpsAlerter):
     return;
   }
 
+  // drain-safety invariant: the full leaf set is persisted (status pending)
+  // BEFORE the root is sent on-chain. so if a railway deploy signal kills the
+  // worker mid-publish, the worst case is a root on-chain with its leaves
+  // already in the db (reconcile then flips the status) — never a root on-chain
+  // with no matching leaves, which would make that cycle unverifiable. the
+  // in-flight tick also drains before the loop exits (see index.ts), so a
+  // normal deploy finishes the publish rather than truncating it.
   await upsertCommit(outcome.cycleId, tree.root, records.length, records, "pending");
   try {
     const { txHash, confirmed } = await sendCommit(outcome.cycleId, tree.root, records.length);

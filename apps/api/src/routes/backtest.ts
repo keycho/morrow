@@ -5,7 +5,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { disclaimer } from "@morrow/config";
-import { db } from "../db.js";
+import { query } from "../db.js";
 
 interface PredictorMetrics {
   predictor: "naive" | "drift" | "morrow";
@@ -54,7 +54,7 @@ function mapMetrics(row: Record<string, unknown>): PredictorMetrics {
 
 export function registerBacktestRoutes(app: FastifyInstance): void {
   app.get("/v1/backtest", async () => {
-    const runRes = await db().query(
+    const runRes = await query(
       `select id, run_at, source, method, history_from, history_to, sessions
        from backtest_runs order by run_at desc limit 1`
     );
@@ -62,7 +62,7 @@ export function registerBacktestRoutes(app: FastifyInstance): void {
       return { data: null, disclaimer };
     }
     const run = runRes.rows[0]!;
-    const res = await db().query(
+    const res = await query(
       `select scope, predictor, n, mae_pct, median_ae_pct, rmse_pct, mean_error_pct,
               worst_pct, p50_abs_pct, p90_abs_pct, hit_rate, win_rate_vs_naive
        from backtest_results where run_id = $1`,

@@ -17,10 +17,15 @@
 // limits), and an x402 payment-required path on the price endpoints for
 // agent pay-per-query (skeleton; settlement behind an interface).
 
-import Fastify, { type FastifyError, type FastifyReply, type FastifyRequest } from "fastify";
+import Fastify, {
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
-import { api, disclaimer, ops, telegram } from "@morrow/config";
+import { api, disclaimer, ops, redactSecrets, telegram } from "@morrow/config";
 import { OpsAlerter, logTransport, makeTelegramTransport } from "@morrow/telegram/ops";
 import { resolveTier, type Tier } from "./auth.js";
 import { closeDb } from "./db.js";
@@ -40,9 +45,53 @@ interface TieredRequest extends FastifyRequest {
   morrowKeyHash?: string | null;
 }
 
+// env parity with the indexer: the api needs the same chain view (contract,
+// chain id) so its proofs advertise the right thing to verify against, plus its
+// own db and admin token. this logs, by name only (never values), any expected
+// var that is unset so the operator can spot a service that was deployed with a
+// partial environment. it does not throw: a missing admin token just disables
+// admin, a missing contract just yields placeholder proof metadata.
+function checkApiEnv(app: FastifyInstance): void {
+  const commits = process.env.MORROW_COMMITS_ADDRESS ?? "";
+  const expected: { name: string; ok: boolean; note: string }[] = [
+    { name: "DATABASE_URL", ok: Boolean(process.env.DATABASE_URL), note: "required to read anything" },
+    {
+      name: "MORROW_COMMITS_ADDRESS",
+      ok: commits !== "" && !commits.includes("PLACEHOLDER"),
+      note: "proofs advertise the contract to verify against; must match the indexer",
+    },
+    {
+      name: "MORROW_CHAIN_ID",
+      ok: Boolean(process.env.MORROW_CHAIN_ID),
+      note: "proofs advertise the chain id; must match the indexer",
+    },
+    { name: "ADMIN_TOKEN", ok: Boolean(process.env.ADMIN_TOKEN), note: "admin endpoints are disabled without it" },
+  ];
+  const missing = expected.filter((e) => !e.ok);
+  if (missing.length > 0) {
+    app.log.warn(
+      { missing: missing.map((m) => m.name) },
+      `api env parity: ${missing.map((m) => `${m.name} (${m.note})`).join("; ")}`
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const app = Fastify({
-    logger: { level: "info" },
+    logger: {
+      level: "info",
+      // redact secrets at the log boundary: an error message or stack can
+      // carry a connection string or embedded key, so both are scrubbed.
+      serializers: {
+        err(error: Error) {
+          return {
+            type: error.name,
+            message: redactSecrets(error.message ?? ""),
+            stack: redactSecrets(error.stack ?? ""),
+          };
+        },
+      },
+    },
     trustProxy: true,
   });
 
@@ -62,6 +111,8 @@ async function main(): Promise<void> {
     cb(null, corsAllowlist.has(origin.replace(/\/+$/, "")));
   };
   await app.register(cors, { origin: corsOrigin });
+
+  checkApiEnv(app);
 
   // ops alerter: logs and pages the private telegram ops channel.
   const alerter = new OpsAlerter(ops.alertCooldownMs, [
@@ -90,7 +141,7 @@ async function main(): Promise<void> {
         : api.rateLimit.freePerMinute,
     timeWindow: "1 minute",
     keyGenerator: (req) => (req as TieredRequest).morrowKeyHash ?? req.ip,
-    allowList: (req) => req.url === "/health",
+    allowList: (req) => req.url === "/health" || req.url === "/uptime",
     errorResponseBuilder: (_req, context) => ({
       error: "rate limit exceeded",
       retryAfterMs: context.ttl,

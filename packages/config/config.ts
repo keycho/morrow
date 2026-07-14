@@ -38,6 +38,19 @@ function envBool(key: string, fallback: boolean): boolean {
   return raw === "1" || raw.toLowerCase() === "true";
 }
 
+// comma-separated env var -> trimmed, de-duplicated list. entries have any
+// trailing slash stripped so a pasted "https://foo.app/" still matches the
+// slash-free Origin header the browser sends. empty when the var is unset.
+function envList(key: string, fallback: string[]): string[] {
+  const raw = process.env[key];
+  if (raw === undefined || raw === "") return fallback;
+  const items = raw
+    .split(",")
+    .map((s) => s.trim().replace(/\/+$/, ""))
+    .filter((s) => s.length > 0);
+  return [...new Set(items)];
+}
+
 // ---------------------------------------------------------------------------
 // chain. robinhood chain is a permissionless arbitrum orbit l2, evm
 // compatible, eth for gas, roughly 100ms blocks. verified from
@@ -855,7 +868,13 @@ export const api = {
   // railway injects PORT; API_PORT wins when both are set.
   port: envNum("API_PORT", envNum("PORT", 8080)),
   host: env("API_HOST", "0.0.0.0"),
-  corsOrigin: env("API_CORS_ORIGIN", "*"),
+  // cross-origin allowlist for browser callers (the vercel frontend).
+  // comma-separated exact origins in CORS_ORIGINS, e.g.
+  // "https://morrow.vercel.app,https://www.morrow.example". empty by default,
+  // which denies every cross-origin browser request; requests without an
+  // Origin header (curl, server to server, same origin) are unaffected. the
+  // single value "*" reflects any origin and is a dev-only escape hatch.
+  corsOrigins: envList("CORS_ORIGINS", []),
   rateLimit: {
     // anonymous free tier, requests per minute per ip.
     freePerMinute: 30,

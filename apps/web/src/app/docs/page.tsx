@@ -4,6 +4,7 @@
 import { DISCLAIMER } from "@/lib/constants";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { BacktestEvidence } from "@/components/BacktestEvidence";
 
 export default function DocsPage() {
   return (
@@ -21,6 +22,15 @@ export default function DocsPage() {
               and commits a merkle root of every observation on robinhood chain so each published
               price is later verifiable. a morrower makes arrows.
             </p>
+
+            <h2>the evidence</h2>
+            <p>
+              morrow&apos;s claim is that its off-hours number predicts the next open better than the
+              obvious baseline: the stock opens where it closed. that baseline is exactly what morrow
+              outputs when drift is zero, so beating it is the whole job. here is the backtest, scored
+              over historical sessions and stated plainly whichever way it falls.
+            </p>
+            <BacktestEvidence />
 
             <h2>methodology, short version</h2>
             <div className="kv">

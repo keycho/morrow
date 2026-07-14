@@ -125,6 +125,40 @@ export interface ReceiptListItem {
   };
 }
 
+export interface BacktestMetrics {
+  predictor: "naive" | "drift" | "morrow";
+  n: number;
+  maePct: number;
+  medianAePct: number;
+  rmsePct: number;
+  meanErrorPct: number;
+  worstPct: number;
+  p50AbsPct: number;
+  p90AbsPct: number;
+  hitRate: number | null;
+  winRateVsNaive: number | null;
+}
+
+export interface BacktestScope {
+  scope: string;
+  naive: BacktestMetrics | null;
+  drift: BacktestMetrics | null;
+  morrow: BacktestMetrics | null;
+}
+
+export interface BacktestPayload {
+  run: {
+    runAt: string;
+    source: string;
+    method: string;
+    historyFrom: string | null;
+    historyTo: string | null;
+    sessions: number;
+  };
+  pooled: BacktestScope | null;
+  tokens: BacktestScope[];
+}
+
 export interface HealthPayload {
   status: "ok" | "degraded" | "down";
   mockMode: boolean;

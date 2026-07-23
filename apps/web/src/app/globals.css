@@ -1162,6 +1162,124 @@ code {
   color: var(--text-faint);
 }
 
+/* ================= PERPS ================= */
+table.data.perps tbody tr {
+  cursor: pointer;
+}
+table.data.perps tbody tr.sel {
+  background: var(--surface-raised);
+  box-shadow: inset 3px 0 0 var(--forest);
+}
+.mkt-perp {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+.skew {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.skew .bar {
+  display: inline-flex;
+  width: 90px;
+  height: 8px;
+  border: 1px solid var(--hairline);
+}
+.skew .bar .long {
+  background: var(--forest);
+}
+.skew .bar .short {
+  background: var(--surface-band);
+}
+.skew .nums {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.ticket {
+  border: 1.5px solid var(--ink);
+  background: var(--surface-raised);
+  box-shadow: 8px 8px 0 0 var(--ink);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 440px;
+}
+.side-toggle {
+  display: flex;
+  border: 1.5px solid var(--ink);
+}
+.side-toggle button {
+  flex: 1;
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  background: var(--surface);
+  color: var(--text-dim);
+  border: none;
+  cursor: pointer;
+}
+.side-toggle button + button {
+  border-left: 1.5px solid var(--ink);
+}
+.side-toggle button.on.long {
+  background: var(--forest);
+  color: var(--surface-raised);
+}
+.side-toggle button.on.short {
+  background: var(--ink);
+  color: var(--surface-raised);
+}
+.ticket .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ticket .field .lbl {
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ticket .input {
+  width: 100%;
+}
+.lev-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.lev-btns .lev {
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.lev-btns .lev.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--surface-raised);
+}
+.ticket .place {
+  justify-content: center;
+  margin-top: 4px;
+}
+.ticket .place:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.verify-mark {
+  font-size: 11px;
+  color: var(--forest-italic);
+}
+
 /* ---- responsive ---- */
 @media (max-width: 980px) {
   .hero {

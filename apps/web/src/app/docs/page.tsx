@@ -16,10 +16,10 @@ export default function DocsPage() {
             <div className="eyebrow">[ what morrow is · methodology · api · mcp ]</div>
             <h1 className="head">docs.</h1>
             <p>
-              tokenized equities on robinhood chain trade around the clock, but their underlying
+              tokenized equities on solana trade around the clock, but their underlying
               stocks only price during nyse and nasdaq hours. morrow publishes a fair value estimate
               per tracked stock token while the underlying market is closed, with a confidence band,
-              and commits a merkle root of every observation on robinhood chain so each published
+              and commits a merkle root of every observation on solana so each published
               price is later verifiable. a morrower makes arrows.
             </p>
 
@@ -106,7 +106,7 @@ export default function DocsPage() {
 
             <h2>chainlink, and what morrow is not</h2>
             <p>
-              chainlink is robinhood chain&apos;s official oracle and feeds stock token prices. morrow
+              chainlink is solana&apos;s official oracle and feeds stock token prices. morrow
               does not compete with that feed. morrow&apos;s product is the off-hours fair value blend
               and the verifiable commit trail, a different object. do not frame morrow as a chainlink
               replacement.
@@ -192,7 +192,7 @@ export default function DocsPage() {
       "args": ["-y", "@morrow/mcp-server"],
       "env": {
         "MORROW_API_URL": "https://your-morrow-api.example",
-        "MORROW_RPC_URL": "https://your-robinhood-chain-rpc.example"
+        "MORROW_RPC_URL": "https://your-solana-rpc.example"
       }
     }
   }

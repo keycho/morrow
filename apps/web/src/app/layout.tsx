@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "morrow · off-hours price oracle",
-  description: "what a stock is worth when the market is closed. a verifiable off-hours fair value oracle for tokenized equities on robinhood chain.",
+  description: "what a stock is worth when the market is closed. a verifiable off-hours fair value oracle for tokenized equities on solana.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

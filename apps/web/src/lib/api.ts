@@ -3,7 +3,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { API_URL } from "./constants";
+import { API_URL, DEMO } from "./constants";
+import { mockAsk, mockFor } from "./mock";
 
 export interface FairValue {
   tokenId: number;
@@ -206,6 +207,10 @@ export interface AskResponse {
 }
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  if (DEMO && path === "/v1/ask") {
+    await new Promise((r) => setTimeout(r, 350)); // let the "thinking" state show
+    return mockAsk(body) as T;
+  }
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "application/json" },
@@ -220,6 +225,10 @@ export async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function getJson<T>(path: string): Promise<T> {
+  if (DEMO) {
+    const m = mockFor(path);
+    if (m !== undefined) return m as T;
+  }
   const res = await fetch(`${API_URL}${path}`, { headers: { accept: "application/json" } });
   if (!res.ok) {
     const body = await res.text();

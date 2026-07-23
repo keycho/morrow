@@ -192,7 +192,7 @@ function SpecimenCard({
           <div className="meta">
             {featured.name.toLowerCase()} · tokenized
             <br />
-            robinhood chain · cycle #{featured.cycleId.toLocaleString("en-US")}
+            solana · cycle #{featured.cycleId.toLocaleString("en-US")}
           </div>
         </div>
 
@@ -352,7 +352,7 @@ export default function LandingPage() {
           morrow
         </Link>
         <div className="eyebrow" style={{ margin: 0 }}>
-          [ off-hours price oracle · robinhood chain ]
+          [ off-hours price oracle · solana ]
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
           <RegimePill showCountdown />

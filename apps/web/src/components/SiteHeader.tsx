@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { DEMO } from "@/lib/constants";
 import { RegimePill } from "./RegimePill";
 
 interface NavItem {
@@ -17,6 +18,9 @@ interface NavItem {
 const NAV: NavItem[] = [
   { label: "feed", href: "/feed", match: (p) => p === "/feed" || p.startsWith("/token") },
   { label: "spreads", href: "/spreads", match: (p) => p.startsWith("/spreads") },
+  ...(DEMO
+    ? [{ label: "perps", href: "/perps", match: (p: string) => p.startsWith("/perps") }]
+    : []),
   { label: "explorer", href: "/commits", match: (p) => p.startsWith("/commits") },
   { label: "receipts", href: "/receipts", match: (p) => p.startsWith("/receipts") },
   { label: "docs", href: "/docs", match: (p) => p.startsWith("/docs") },

@@ -7,6 +7,12 @@ export const API_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:808
 
 export const EXPLORER_URL = (process.env.NEXT_PUBLIC_EXPLORER_URL ?? "").replace(/\/$/, "");
 
+// DEMO MODE. scaffolding for a screenshot / demo deploy, not production. when
+// on, the data layer serves mock payloads from lib/mock.ts so every page shows
+// a full, live-looking feed with no api, database, or chain behind it. defaults
+// on for the demo build; set NEXT_PUBLIC_DEMO_MODE=0 to hit the real api.
+export const DEMO = (process.env.NEXT_PUBLIC_DEMO_MODE ?? "1") !== "0";
+
 // chain read config for the client-side verify path and the explorer's
 // contract-read commit count. deployment config (public), env-overridable.
 // the public rpc is rate limited but fine for occasional read-only verifies.

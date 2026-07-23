@@ -17,17 +17,20 @@ import {
   type Hex,
   type Address,
 } from "viem";
-import { RPC_URL, CHAIN_ID, COMMITS_ADDRESS } from "./constants";
+import { RPC_URL, CHAIN_ID, COMMITS_ADDRESS, DEMO } from "./constants";
+import { mockContractStats, mockRoot } from "./mock";
 
-export const robinhoodChain = defineChain({
+const DEMO_ADDRESS = "0x8b5f3c2a1d9e4b7f6a0c8d2e1f3a4b5c6d7e8f90";
+
+export const solanaChain = defineChain({
   id: CHAIN_ID,
-  name: "robinhood chain",
+  name: "solana",
   nativeCurrency: { name: "ether", symbol: "ETH", decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
 });
 
 export const publicClient = createPublicClient({
-  chain: robinhoodChain,
+  chain: solanaChain,
   transport: http(RPC_URL),
 });
 
@@ -77,7 +80,7 @@ const ZERO_ROOT = "0x00000000000000000000000000000000000000000000000000000000000
 // configured address; fall back to the address the api reports inside a proof
 // payload. returns null when neither is available (the ui then says so plainly).
 export function resolveCommitsAddress(fallback?: string | null): Address | null {
-  const raw = (COMMITS_ADDRESS || fallback || "").trim();
+  const raw = (COMMITS_ADDRESS || fallback || (DEMO ? DEMO_ADDRESS : "")).trim();
   if (!raw) return null;
   try {
     return getAddress(raw);
@@ -130,6 +133,9 @@ export async function readOnchainCommit(
   address: Address,
   cycleId: number
 ): Promise<OnchainCommit> {
+  if (DEMO) {
+    return { merkleRoot: mockRoot(cycleId), observationCount: 6, committedAt: 1_768_300_000, exists: true };
+  }
   const [merkleRoot, observationCount, committedAt] = (await publicClient.readContract({
     address,
     abi: MORROW_COMMITS_ABI,
@@ -152,6 +158,7 @@ export async function readOnchainVerify(
   proof: Hex[],
   cycleId: number
 ): Promise<boolean> {
+  if (DEMO) return true;
   return (await publicClient.readContract({
     address,
     abi: MORROW_COMMITS_ABI,
@@ -167,6 +174,7 @@ export interface ContractStats {
 
 // the explorer's committed-root count, read from the contract, not the api.
 export async function readContractStats(address: Address): Promise<ContractStats> {
+  if (DEMO) return mockContractStats();
   const [commitCount, latestCycleId] = (await Promise.all([
     publicClient.readContract({
       address,

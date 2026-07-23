@@ -201,7 +201,7 @@ function ExplorerInner() {
             sub={
               stats === "unavailable"
                 ? "set commits address to read the contract"
-                : "on robinhood chain, read via rpc"
+                : "on solana, read via rpc"
             }
           />
         </section>
